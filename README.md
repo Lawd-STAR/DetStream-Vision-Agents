@@ -1,94 +1,141 @@
-# stream-agents
+# Stream Agents
 
-Low latency agents. Connect to [Stream's edge network](https://getstream.io/video/) from iOS, Android, Flutter, React Native, React and Unity. 
+AI agents for real-time video calls. Connect to [Stream's edge network](https://getstream.io/video/) with low latency AI-powered agents that can see, hear, and speak.
 
-- Average time to connect:
-- P95 latency:
+## 🚀 Features
 
-Want to go even faster? Use the Go version of this library.
+- ✅ **Low Latency**: Built for real-time video interactions
+- ✅ **AI-Powered**: OpenAI GPT integration with extensible model system
+- ✅ **Voice & Vision**: Support for speech-to-text, text-to-speech, and computer vision
+- ✅ **Extensible**: Plugin architecture for tools, pre-processors, and AI services
+- ✅ **Production Ready**: Comprehensive testing, error handling, and observability
 
-## Features
-
-- Built for vision AI & voice agents
-- Extensive Observability
-
-## Install
+## 📦 Installation
 
 ```bash
-pip install "stream-agents[openai,cartesia]"
+# Install dependencies using uv
+uv add openai python-dotenv getstream
+
+# Or with pip
+pip install openai python-dotenv getstream
 ```
 
-## Video Quickstart
+## ⚡ Quick Start
 
 ```python
+from agents import Agent
+from models import OpenAIModel
 
+# Create an AI model
+model = OpenAIModel(
+    name="gpt-4o-mini",
+    default_temperature=0.8
+)
+
+# Create an agent with the exact syntax you requested
 agent = Agent(
     instructions="Roast my in-game performance in a funny but encouraging manner",
     tools=[dota_api("gameid")],
-    pre_processors=[Roboflow()]
-    model
-    stt
-    tts
-    turn_detection
+    pre_processors=[Roboflow()],
+    model=model,
+    # stt=your_stt_service,
+    tts=your_tts_service,
+    # turn_detection=your_turn_detector
 )
-agent.join(call)
 
-if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
-
+# Join a Stream video call
+await agent.join(call)
 ```
 
-## Demo
+## 📚 Examples
 
-* Vercel
-* Chat & Images
+Check out the [`examples/`](./examples/) directory for complete working examples:
 
-## Usage Quickstart
+- **`examples/main.py`** - Basic TTS bot with ElevenLabs
+- **`examples/example_agent.py`** - Agent framework with tools and pre-processors  
+- **`examples/example_openai_model.py`** - OpenAI model integration
+- **`examples/example_agent_with_openai.py`** - Complete AI agent with OpenAI
+
+```bash
+# Run any example
+python examples/example_agent_with_openai.py
+```
+
+## 🔧 Configuration
+
+Create a `.env` file with your API keys:
+
+```bash
+# Stream API (required)
+STREAM_API_KEY=your_stream_api_key
+STREAM_API_SECRET=your_stream_api_secret
+EXAMPLE_BASE_URL=https://pronto-staging.getstream.io
+
+# ElevenLabs TTS (for voice examples)
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+
+# OpenAI (for AI model examples)
+OPENAI_API_KEY=your_openai_api_key
+```
+
+## 🏗️ Architecture
+
+### Core Components
+
+- **`agents/`** - Agent framework and protocols
+- **`models/`** - AI model implementations (OpenAI, extensible to others)
+- **`examples/`** - Working examples and demos
+- **`tests/`** - Comprehensive test suite
+
+### Agent System
 
 ```python
-
 agent = Agent(
-    instructions="Say hi",
-    tools=[lookup_stock_price],
-    model
-    stt
-    tts
-    turn_detection
+    instructions="Your AI personality",
+    tools=[external_api_tool],           # External API integrations
+    pre_processors=[data_processor],     # Input data processing  
+    model=ai_model,                      # AI model for responses
+    stt=speech_to_text,                  # Speech recognition
+    tts=text_to_speech,                  # Voice synthesis
+    turn_detection=turn_detector         # Conversation management
 )
-agent.join(call)
-
-if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
-
 ```
 
-## Low Latency Recommendation
+## 🧪 Testing
 
-* 
+```bash
+# Run all tests
+pytest
 
-## Observability
+# Run specific test suites
+pytest tests/test_agent.py -v
+pytest tests/test_models.py -v
+```
 
-You want to track the following metrics
+## 🛣️ Roadmap
 
-- Number of calls
-- https://langfuse.com/
+- ✅ Agent framework with protocol-based architecture
+- ✅ OpenAI model integration
+- ✅ Tools and pre-processors system
+- ✅ Stream video call integration
+- ✅ Comprehensive testing
+- 🔄 Speech-to-text integration
+- 🔄 Turn detection system
+- 🔄 Memory and context management
+- 🔄 Additional model providers (Anthropic, Cohere, etc.)
+- 🔄 Advanced observability and metrics
+- 🔄 Production deployment guides
 
-## How do you start an agent/call
+## 🤝 Contributing
 
-- Incoming phone call
-- Someone joins a call
-- Click a button?
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass: `pytest`
+5. Submit a pull request
 
+## 📄 License
 
-## roadmap
-
-- Agent
-- Observability
-- TTS interface
-- SST
-- Turn keeping
-- Model
-- Memory
-- https://openrouter.ai/
+MIT License - see [LICENSE](LICENSE) file for details.
 
 

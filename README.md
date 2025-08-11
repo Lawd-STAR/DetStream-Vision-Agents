@@ -5,6 +5,8 @@ Low latency agents. Connect to [Stream's edge network](https://getstream.io/vide
 - Average time to connect:
 - P95 latency:
 
+Want to go even faster? Use the Go version of this library.
+
 ## Features
 
 - Observability & Performance

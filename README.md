@@ -9,7 +9,8 @@ Want to go even faster? Use the Go version of this library.
 
 ## Features
 
-- Observability & Performance
+- Built for vision AI & voice agents
+- Extensive Observability
 
 ## Install
 

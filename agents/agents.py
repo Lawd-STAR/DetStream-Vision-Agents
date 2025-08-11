@@ -155,6 +155,7 @@ class Agent:
 
                 # Send initial greeting if TTS is available
                 if self.tts and self.instructions:
+                    # TODO: this isn't right
                     await self._send_initial_greeting()
 
                 self.logger.info("🎧 Agent is active - press Ctrl+C to stop")

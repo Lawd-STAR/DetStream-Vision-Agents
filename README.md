@@ -1,6 +1,11 @@
 # Stream Agents
 
-AI agents for real-time video calls. Connect to [Stream's edge network](https://getstream.io/video/) with low latency AI-powered agents that can see, hear, and speak.
+Low latency video and voice AI agents on [Stream's edge network](https://getstream.io/video/).
+
+* Average time to join: 500ms
+* 95% percentile audio transport latency: 30ms
+
+SDKs for React, Android, iOS, Flutter, React, React Native and Unity.
 
 ## 🚀 Features
 

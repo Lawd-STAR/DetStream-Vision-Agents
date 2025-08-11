@@ -75,3 +75,17 @@ You want to track the following metrics
 - Incoming phone call
 - Someone joins a call
 - Click a button?
+
+
+## roadmap
+
+- Agent
+- Observability
+- TTS interface
+- SST
+- Turn keeping
+- Model
+
+- https://openrouter.ai/
+
+

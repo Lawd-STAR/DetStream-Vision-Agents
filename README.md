@@ -88,7 +88,7 @@ You want to track the following metrics
 - SST
 - Turn keeping
 - Model
-
+- Memory
 - https://openrouter.ai/
 
 

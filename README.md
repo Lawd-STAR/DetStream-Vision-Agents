@@ -34,6 +34,10 @@ if __name__ == "__main__":
 
 ```
 
+## Low Latency Recommendation
+
+* 
+
 ## Observability
 
 You want to track the following metrics

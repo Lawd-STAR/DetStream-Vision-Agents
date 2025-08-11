@@ -15,9 +15,33 @@ Low latency agents. Connect to [Stream's edge network](https://getstream.io/vide
 pip install "stream-agents[openai,cartesia]"
 ```
 
-## Usage Quickstart
+## Video Quickstart
+
+```python
+
+agent = Agent(
+    instructions="Roast my in-game performance in a funny but encouraging manner",
+    tools=[dota_api("gameid")],
+    pre_processors=[Roboflow()]
+    model
+    stt
+    tts
+    turn_detection
+)
+agent.join(call)
+
+if __name__ == "__main__":
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 
 ```
+
+## Demo
+
+* Vercel
+
+## Usage Quickstart
+
+```python
 
 agent = Agent(
     instructions="Say hi",

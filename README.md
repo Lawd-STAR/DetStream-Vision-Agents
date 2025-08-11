@@ -34,6 +34,13 @@ if __name__ == "__main__":
 
 ```
 
+## Observability
+
+You want to track the following metrics
+
+- Number of calls
+- https://langfuse.com/
+
 ## How do you start an agent/call
 
 - Incoming phone call

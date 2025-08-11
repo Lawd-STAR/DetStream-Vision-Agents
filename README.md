@@ -38,6 +38,7 @@ if __name__ == "__main__":
 ## Demo
 
 * Vercel
+* Chat & Images
 
 ## Usage Quickstart
 

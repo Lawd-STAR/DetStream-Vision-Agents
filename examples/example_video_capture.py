@@ -2,18 +2,18 @@
 """
 Video Capture Example for Stream Agents
 
-This example demonstrates how to capture video frames from a Stream video call
-and save them as JPG images every 5 seconds. It's inspired by the workout assistant
-but simplified to focus on basic video frame capture.
+This example demonstrates how to use the Agent class with built-in video processing
+capabilities to capture video frames from a Stream video call and save them as JPG 
+images at configurable intervals.
 
 Usage:
-    python example_video_capture.py
+    python example_video_capture.py [--interval SECONDS] [--output DIR]
 
 The example will:
 1. Create a Stream video call
-2. Join as an AI bot
+2. Join as an AI Agent with video processing enabled
 3. Listen for video tracks from participants
-4. Capture frames every 5 seconds and save them as JPG files
+4. Capture frames at the specified interval and save them as JPG files
 5. Display the captured frames count and file names
 
 Requirements:
@@ -43,12 +43,28 @@ from getstream.stream import Stream
 from getstream.video import rtc
 from getstream.video.call import Call
 from getstream.video.rtc.tracks import SubscriptionConfig, TrackSubscriptionConfig, TrackType
+from utils import open_pronto
+
+# Import Agent base class
+sys.path.insert(0, str(Path(__file__).parent.parent / "agents"))
+from agents import Agent
+
+# Import required modules for VideoAgent
+from getstream.video.rtc import audio_track
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class VideoFrameCapture:
+class ImageProcessor:
+    """Protocol for image processors."""
+    
+    async def process_image(self, image: Image.Image, user_id: str, metadata: dict = None) -> None:
+        """Process a video frame image."""
+        pass
+
+
+class VideoFrameCapture(ImageProcessor):
     """Handles video frame capture and storage."""
     
     def __init__(self, output_dir: str = "captured_frames", capture_interval: int = 5):
@@ -77,6 +93,11 @@ class VideoFrameCapture:
             return True
         return False
     
+    async def process_image(self, image: Image.Image, user_id: str, metadata: dict = None) -> None:
+        """Process image by saving it as JPG."""
+        if await self.should_capture_frame():
+            await self.capture_frame(image, user_id)
+    
     async def capture_frame(self, frame: Image.Image, user_id: str) -> str:
         """
         Capture and save a video frame as JPG.
@@ -101,107 +122,32 @@ class VideoFrameCapture:
         return str(filepath)
 
 
-async def process_video_track(track_id: str, track_type: str, user, target_user_id: str, 
-                            ai_connection, frame_capture: VideoFrameCapture):
-    """
-    Process video frames from a specific track.
-    
-    Args:
-        track_id: ID of the video track
-        track_type: Type of track (should be "video")
-        user: User object who owns the track
-        target_user_id: ID of user we want to capture (None for any user)
-        ai_connection: AI bot's RTC connection
-        frame_capture: VideoFrameCapture instance
-    """
-    logger.info(f"🎥 Processing video track: {track_id} from user {user.user_id} (type: {track_type})")
-    
-    # Only process video tracks
-    if track_type != "video":
-        logger.debug(f"Ignoring non-video track: {track_type}")
-        return
-    
-    # If target_user_id is specified, only process that user's video
-    if target_user_id and user.user_id != target_user_id:
-        logger.debug(f"Ignoring video from user {user.user_id} (target: {target_user_id})")
-        return
-    
-    # Subscribe to the video track
-    track = ai_connection.subscriber_pc.add_track_subscriber(track_id)
-    if not track:
-        logger.error(f"❌ Failed to subscribe to track: {track_id}")
-        return
-    
-    logger.info(f"✅ Successfully subscribed to video track from {user.user_id}")
-    
-    try:
-        while True:
-            try:
-                # Receive video frame
-                video_frame: aiortc.mediastreams.VideoFrame = await track.recv()
-                if not video_frame:
-                    continue
-                
-                # Check if we should capture this frame
-                if await frame_capture.should_capture_frame():
-                    # Convert to PIL Image
-                    img = video_frame.to_image()
-                    
-                    # Capture and save the frame
-                    await frame_capture.capture_frame(img, user.user_id)
-                    
-            except Exception as e:
-                if "Connection closed" in str(e) or "Track ended" in str(e):
-                    logger.info(f"🔌 Video track ended for user {user.user_id}")
-                    break
-                else:
-                    logger.error(f"❌ Error processing video frame: {e}")
-                    await asyncio.sleep(1)  # Brief pause before retry
-                    
-    except Exception as e:
-        logger.error(f"❌ Fatal error in video processing: {e}")
-        logger.error(traceback.format_exc())
+
+
+
+
 
 
 def create_user(client: Stream, user_id: str, name: str):
     """Create a user in Stream."""
     try:
-        client.upsert_users([{
-            "id": user_id,
-            "name": name,
-            "role": "user"
-        }])
+        from getstream.models import UserRequest
+        user_request = UserRequest(id=user_id, name=name)
+        client.upsert_users(user_request)
         logger.info(f"👤 Created user: {name} ({user_id})")
     except Exception as e:
         logger.error(f"❌ Failed to create user {user_id}: {e}")
 
 
-def open_browser(api_key: str, token: str, call_id: str):
-    """Open browser with the video call URL."""
-    import webbrowser
-    from urllib.parse import urlencode
-    
-    # Use the same URL pattern as the working workout assistant example
-    base_url = f"{os.getenv('EXAMPLE_BASE_URL', 'https://pronto-staging.getstream.io')}/join/"
-    params = {"api_key": api_key, "token": token, "skip_lobby": "true", "video_encoder": "vp8"}
-    
-    url = f"{base_url}{call_id}?{urlencode(params)}"
-    logger.info(f"🌐 Opening browser: {url}")
-    
-    try:
-        webbrowser.open(url)
-        logger.info("✅ Browser opened successfully!")
-    except Exception as e:
-        logger.error(f"❌ Failed to open browser: {e}")
-        logger.info(f"Please manually open this URL: {url}")
 
 
-async def main():
+
+async def main(interval: int = 5, output_dir: str = "captured_frames"):
     """Main function to run the video capture example."""
     
     print("🎥 Stream Agents - Video Capture Example")
     print("=" * 50)
-    print("This example captures video frames every 5 seconds from a Stream video call.")
+    print(f"This example captures video frames every {interval} seconds from a Stream video call.")
     print("Join the call from your browser to see your video being captured!")
     print()
     
@@ -223,11 +169,9 @@ async def main():
     logger.info(f"📞 Call ID: {call_id}")
     
     # Create user IDs
-    ai_user_id = f"ai-capture-{str(uuid4())[:8]}"
     participant_user_id = f"participant-{str(uuid4())[:8]}"
     
     # Create users
-    create_user(client, ai_user_id, "Video Capture Bot")
     create_user(client, participant_user_id, "Participant")
     
     # Create tokens
@@ -235,59 +179,47 @@ async def main():
     
     # Create the call
     try:
-        call.get_or_create(data={"created_by_id": ai_user_id})
+        call.get_or_create(data={"created_by_id": participant_user_id})
         logger.info("✅ Call created successfully")
     except Exception as e:
         logger.error(f"❌ Failed to create call: {e}")
         return
     
-    # Initialize frame capture
+    # Initialize Agent with image processing capabilities
     frame_capture = VideoFrameCapture(
-        output_dir="captured_frames",
-        capture_interval=5  # 5 seconds
+        output_dir=output_dir,
+        capture_interval=interval
     )
     
+    # Prepare image processors list
+    image_processors = [frame_capture]
+    
+    agent = Agent(
+        instructions="I am a video capture bot that processes video frames from participants.",
+        image_interval=interval,  # Use the provided interval
+        image_processors=image_processors,  # Use the frame capture processor
+        target_user_id=None,  # Capture from any user
+        name="Video Capture Bot"
+    )
+    
+    # User creation callback
+    def create_agent_user(bot_id: str, name: str):
+        create_user(client, bot_id, name)
+    
     try:
-        # Join as AI bot with video subscription
-        logger.info(f"🤖 AI bot joining call as: {ai_user_id}")
+        # Open browser for participant to join
+        open_pronto(client.api_key, participant_token, call_id)
         
-        async with await rtc.join(
-            call,
-            ai_user_id,
-            subscription_config=SubscriptionConfig(
-                default=TrackSubscriptionConfig(track_types=[
-                    TrackType.TRACK_TYPE_VIDEO,
-                ])
-            )
-        ) as ai_connection:
-            
-            logger.info("✅ AI bot successfully joined the call")
-            
-            # Set up event handler for new video tracks
-            def on_track_added(track_id, track_type, user):
-                logger.info(f"🎬 New track detected: {track_id} ({track_type}) from {user.user_id}")
-                asyncio.create_task(
-                    process_video_track(
-                        track_id, track_type, user, None,  # None means capture from any user
-                        ai_connection, frame_capture
-                    )
-                )
-            
-            ai_connection.on("track_added", on_track_added)
-            
-            # Open browser for participant to join
-            open_browser(client.api_key, participant_token, call_id)
-            
-            print()
-            print("🎯 Ready to capture video frames!")
-            print("   • Join the call from your browser")
-            print("   • Turn on your camera")
-            print("   • Frames will be captured every 5 seconds")
-            print("   • Press Ctrl+C to stop")
-            print()
-            
-            # Wait for the connection
-            await ai_connection.wait()
+        print()
+        print("🎯 Ready to capture video frames!")
+        print("   • Join the call from your browser")
+        print("   • Turn on your camera")
+        print(f"   • Frames will be captured every {interval} seconds")
+        print("   • Press Ctrl+C to stop")
+        print()
+        
+        # Join the call with the Agent
+        await agent.join(call, user_creation_callback=create_agent_user)
             
     except KeyboardInterrupt:
         logger.info("⏹️  Video capture stopped by user")
@@ -298,7 +230,7 @@ async def main():
         # Cleanup: Delete created users
         try:
             logger.info("🧹 Cleaning up users...")
-            client.delete_users([ai_user_id, participant_user_id])
+            client.delete_users([agent.bot_id, participant_user_id])
             logger.info("✅ Cleanup completed")
         except Exception as e:
             logger.error(f"❌ Error during cleanup: {e}")
@@ -332,5 +264,5 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Run the example
-    asyncio.run(main())
+    # Run the example with parsed arguments
+    asyncio.run(main(interval=args.interval, output_dir=args.output))

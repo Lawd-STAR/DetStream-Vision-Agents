@@ -1,4 +1,4 @@
-# Stream Agents
+# Open Agents by Stream
 
 Low latency video and voice AI agents on [Stream's edge network](https://getstream.io/video/).
 
@@ -6,6 +6,8 @@ Low latency video and voice AI agents on [Stream's edge network](https://getstre
 * 95% percentile audio transport latency: 30ms
 
 SDKs for React, Android, iOS, Flutter, React, React Native and Unity.
+Open Agent library, support for most of our video/audio competitors as well.
+If you prefer Twilio, Cloudflare or Mediasoup you're welcome to use those.
 
 ## 🚀 Features
 

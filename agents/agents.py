@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import traceback
 from typing import Any, Callable, List, Optional, Protocol
 from uuid import uuid4
 
+import aiortc
+from PIL import Image
 from getstream.video import rtc
 from getstream.video.rtc import audio_track
+from getstream.video.rtc.tracks import SubscriptionConfig, TrackSubscriptionConfig, TrackType
 
 # Import STT, TTS, and VAD base classes from stream-py package
 from getstream.plugins.common.stt import STT
@@ -56,6 +60,14 @@ class TurnDetection(Protocol):
         ...
 
 
+class ImageProcessor(Protocol):
+    """Protocol for image processors."""
+    
+    async def process_image(self, image: Image.Image, user_id: str, metadata: dict = None) -> None:
+        """Process a video frame image."""
+        ...
+
+
 class Agent:
     """
     AI Agent that can join Stream video calls and interact with participants.
@@ -83,6 +95,9 @@ class Agent:
         tts: Optional[TTS] = None,
         vad: Optional[VAD] = None,
         turn_detection: Optional[TurnDetection] = None,
+        image_interval: Optional[int] = None,
+        image_processors: Optional[List[ImageProcessor]] = None,
+        target_user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         name: Optional[str] = None,
     ):
@@ -98,6 +113,9 @@ class Agent:
             tts: Text-to-Speech service
             vad: Voice Activity Detection service (optional)
             turn_detection: Turn detection service
+            image_interval: Interval in seconds for image processing (None to disable)
+            image_processors: List of image processors to apply to video frames
+            target_user_id: Specific user to capture video from (None for all users)
             bot_id: Unique bot ID (auto-generated if not provided)
             name: Display name for the bot
         """
@@ -109,6 +127,9 @@ class Agent:
         self.tts = tts
         self.vad = vad
         self.turn_detection = turn_detection
+        self.image_interval = image_interval
+        self.image_processors = image_processors or []
+        self.target_user_id = target_user_id
         self.bot_id = bot_id or f"agent-{uuid4()}"
         self.name = name or "AI Agent"
 
@@ -117,6 +138,65 @@ class Agent:
         self._is_running = False
 
         self.logger = logging.getLogger(f"Agent[{self.bot_id}]")
+    
+    async def _process_video_track(self, track_id: str, track_type: str, user):
+        """Process video frames from a specific track."""
+        self.logger.info(f"🎥 Processing video track: {track_id} from user {user.user_id} (type: {track_type})")
+        
+        # Only process video tracks
+        if track_type != "video":
+            self.logger.debug(f"Ignoring non-video track: {track_type}")
+            return
+        
+        # If target_user_id is specified, only process that user's video
+        if self.target_user_id and user.user_id != self.target_user_id:
+            self.logger.debug(f"Ignoring video from user {user.user_id} (target: {self.target_user_id})")
+            return
+        
+        # Subscribe to the video track
+        track = self._connection.subscriber_pc.add_track_subscriber(track_id)
+        if not track:
+            self.logger.error(f"❌ Failed to subscribe to track: {track_id}")
+            return
+        
+        self.logger.info(f"✅ Successfully subscribed to video track from {user.user_id}")
+        
+        try:
+            while True:
+                try:
+                    # Receive video frame
+                    video_frame: aiortc.mediastreams.VideoFrame = await track.recv()
+                    if not video_frame:
+                        continue
+                    
+                    # Convert to PIL Image
+                    img = video_frame.to_image()
+                    
+                    # Process through all image processors
+                    for processor in self.image_processors:
+                        try:
+                            await processor.process_image(
+                                img, 
+                                user.user_id, 
+                                metadata={
+                                    "track_id": track_id,
+                                    "timestamp": asyncio.get_event_loop().time()
+                                }
+                            )
+                        except Exception as e:
+                            self.logger.error(f"❌ Error in image processor {type(processor).__name__}: {e}")
+                        
+                except Exception as e:
+                    if "Connection closed" in str(e) or "Track ended" in str(e):
+                        self.logger.info(f"🔌 Video track ended for user {user.user_id}")
+                        break
+                    else:
+                        self.logger.error(f"❌ Error processing video frame: {e}")
+                        await asyncio.sleep(1)  # Brief pause before retry
+                        
+        except Exception as e:
+            self.logger.error(f"❌ Fatal error in video processing: {e}")
+            self.logger.error(traceback.format_exc())
 
     async def join(
         self, call, user_creation_callback: Optional[Callable] = None
@@ -143,7 +223,17 @@ class Agent:
             self.tts.set_output_track(self._audio_track)
 
         try:
-            async with await rtc.join(call, self.bot_id) as connection:
+            # Configure subscription based on whether video processing is enabled
+            subscription_config = None
+            if self.image_processors:
+                subscription_config = SubscriptionConfig(
+                    default=TrackSubscriptionConfig(track_types=[
+                        TrackType.TRACK_TYPE_VIDEO,
+                        TrackType.TRACK_TYPE_AUDIO,
+                    ])
+                )
+            
+            async with await rtc.join(call, self.bot_id, subscription_config=subscription_config) as connection:
                 self._connection = connection
                 self._is_running = True
 
@@ -218,6 +308,17 @@ class Agent:
                     await self._handle_audio_input(pcm, user)
             except Exception as e:
                 self.logger.error(f"Error handling audio received event: {e}")
+
+        # Set up video track handler if image processors are configured
+        if self.image_processors and self._connection:
+            def on_track_added(track_id, track_type, user):
+                self.logger.info(f"🎬 New track detected: {track_id} ({track_type}) from {user.user_id}")
+                if track_type == "video":
+                    asyncio.create_task(
+                        self._process_video_track(track_id, track_type, user)
+                    )
+            
+            self._connection.on("track_added", on_track_added)
 
         # Safely set up event handlers
         try:

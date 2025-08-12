@@ -58,6 +58,36 @@ python examples/example_openai_model.py
 python examples/example_agent_with_openai.py
 ```
 
+### 🎥 Video Processing Examples
+
+#### `example_video_capture.py`
+**Video Frame Capture Example**
+- Captures video frames from Stream video calls every 5 seconds
+- Saves frames as high-quality JPG images
+- Demonstrates video track subscription and processing
+- Inspired by the workout assistant but simplified for basic capture
+- Perfect for building video analysis, monitoring, or archival systems
+
+```bash
+python examples/example_video_capture.py
+```
+
+**Features:**
+- 📸 Automatic frame capture every 5 seconds (configurable)
+- 🖼️ High-quality JPG image storage
+- 👥 Captures from any participant's video
+- 📁 Organized file naming with timestamps
+- 🧹 Automatic cleanup and summary reporting
+
+**Command line options:**
+```bash
+# Custom capture interval (default: 5 seconds)
+python examples/example_video_capture.py --interval 10
+
+# Custom output directory (default: captured_frames)
+python examples/example_video_capture.py --output my_captures
+```
+
 ## 🚀 Prerequisites
 
 ### Environment Variables
@@ -94,6 +124,7 @@ All dependencies are managed via `uv`. The examples use:
    python examples/example_agent.py
    python examples/example_openai_model.py
    python examples/example_agent_with_openai.py
+   python examples/example_video_capture.py
    ```
 
 3. **Join the video call** in your browser when prompted

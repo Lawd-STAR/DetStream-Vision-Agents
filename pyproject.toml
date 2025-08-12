@@ -13,4 +13,5 @@ dependencies = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "openai>=1.99.8",
+    "getstream-plugins-deepgram>=0.1.0",
 ]

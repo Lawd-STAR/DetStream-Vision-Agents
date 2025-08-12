@@ -24,8 +24,8 @@ from dotenv import load_dotenv
 
 from getstream.models import UserRequest
 from getstream.stream import Stream
-from getstream.plugins.elevenlabs import ElevenLabsTTS
-from getstream.plugins.deepgram import DeepgramSTT
+from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
+from getstream.plugins.deepgram.stt import DeepgramSTT
 
 
 from agents import Agent
@@ -143,7 +143,11 @@ async def main() -> None:
     try:
         # Join the call using the agent
         await agent.join(call, user_creation_callback=create_bot_user)
-        
+        agent.stt.on("transcript", on_transcript)
+        async def on_transcript(text: str, user: any, metadata: dict):
+            print(f"Transcript: {text}")
+            print(f"User: {user}")
+            print(f"Metadata: {metadata}")
     except asyncio.CancelledError:
         logging.info("Stopping agent...")
     finally:

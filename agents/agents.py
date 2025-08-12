@@ -15,9 +15,10 @@ from uuid import uuid4
 from getstream.video import rtc
 from getstream.video.rtc import audio_track
 
-# Import STT and TTS base classes from stream-py package
+# Import STT, TTS, and VAD base classes from stream-py package
 from getstream.plugins.common.stt import STT
 from getstream.plugins.common.tts import TTS
+from getstream.plugins.common.vad import VAD
 
 
 class Tool(Protocol):
@@ -80,6 +81,7 @@ class Agent:
         model: Optional[Model] = None,
         stt: Optional[STT] = None,
         tts: Optional[TTS] = None,
+        vad: Optional[VAD] = None,
         turn_detection: Optional[TurnDetection] = None,
         bot_id: Optional[str] = None,
         name: Optional[str] = None,
@@ -94,6 +96,7 @@ class Agent:
             model: AI model for generating responses
             stt: Speech-to-Text service
             tts: Text-to-Speech service
+            vad: Voice Activity Detection service (optional)
             turn_detection: Turn detection service
             bot_id: Unique bot ID (auto-generated if not provided)
             name: Display name for the bot
@@ -104,6 +107,7 @@ class Agent:
         self.model = model
         self.stt = stt
         self.tts = tts
+        self.vad = vad
         self.turn_detection = turn_detection
         self.bot_id = bot_id or f"agent-{uuid4()}"
         self.name = name or "AI Agent"
@@ -176,12 +180,18 @@ class Agent:
             self._is_running = False
             self._connection = None
 
-            # Clean up STT service
+            # Clean up audio services
             if self.stt:
                 try:
                     await self.stt.close()
                 except Exception as e:
                     self.logger.warning(f"Error closing STT service: {e}")
+            
+            if self.vad:
+                try:
+                    await self.vad.close()
+                except Exception as e:
+                    self.logger.warning(f"Error closing VAD service: {e}")
 
     async def _setup_event_handlers(self) -> None:
         """Set up event handlers for the connection."""
@@ -199,11 +209,13 @@ class Agent:
             except Exception as e:
                 self.logger.error(f"Error handling track published event: {e}")
 
-        # Handle audio data for STT
-        async def on_audio_received(event):
+        # Handle audio data for STT using Stream SDK pattern
+        @self._connection.on("audio")
+        async def on_audio_received(pcm, user):
+            """Handle incoming audio data from participants."""
             try:
-                if self.stt and hasattr(event, "audio_data"):
-                    await self._handle_audio_input(event.audio_data)
+                if self.stt and user and user != self.bot_id:
+                    await self._handle_audio_input(pcm, user)
             except Exception as e:
                 self.logger.error(f"Error handling audio received event: {e}")
 
@@ -213,7 +225,6 @@ class Agent:
                 self._connection._ws_client.on_event(
                     "track_published", on_track_published
                 )
-                # Note: Audio handling would need to be implemented based on the actual Stream SDK
         except Exception as e:
             self.logger.error(f"Error setting up event handlers: {e}")
 
@@ -251,43 +262,85 @@ class Agent:
             except Exception as e:
                 self.logger.error(f"Failed to greet participant {user_id}: {e}")
 
-    async def _handle_audio_input(self, audio_data: bytes) -> None:
-        """Handle incoming audio data."""
+    async def _handle_audio_input(self, pcm_data, user) -> None:
+        """Handle incoming audio data from Stream WebRTC connection."""
         if not self.stt:
             return
 
         try:
-            # Check if it's our turn to respond
-            if self.turn_detection and not self.turn_detection.detect_turn(audio_data):
-                return
+            # Check if it's our turn to respond (if turn detection is configured)
+            if self.turn_detection and hasattr(pcm_data, 'data'):
+                if not self.turn_detection.detect_turn(pcm_data.data):
+                    return
 
-            # Set up event listener for transcription results
+            # Set up event listeners for transcription results (one-time setup)
             if not hasattr(self, "_stt_setup"):
                 self.stt.on("transcript", self._on_transcript)
                 self.stt.on("partial_transcript", self._on_partial_transcript)
+                self.stt.on("error", self._on_stt_error)
                 self._stt_setup = True
 
-            # Process audio using the PCM data format expected by stream-py STT
-            # Note: This would need proper PCM data conversion in real implementation
-            await self.stt.process_audio(audio_data)
+            # Handle audio processing with or without VAD
+            if self.vad:
+                # With VAD: Only process audio when speech is detected
+                await self._process_audio_with_vad(pcm_data, user)
+            else:
+                # Without VAD: Process all audio directly through STT
+                await self.stt.process_audio(pcm_data, user)
 
         except Exception as e:
-            self.logger.error(f"Error handling audio input: {e}")
+            self.logger.error(f"Error handling audio input from user {user}: {e}")
 
-    async def _on_transcript(self, text: str, user_metadata=None, metadata=None):
+    async def _process_audio_with_vad(self, pcm_data, user) -> None:
+        """Process audio with Voice Activity Detection."""
+        try:
+            # Set up VAD event listeners (one-time setup)
+            if not hasattr(self, "_vad_setup"):
+                self.vad.on("speech_start", self._on_speech_start)
+                self.vad.on("speech_end", self._on_speech_end)
+                self._vad_setup = True
+
+            # Process audio through VAD first
+            await self.vad.process_audio(pcm_data, user)
+            
+            # VAD will trigger speech events that route to STT when appropriate
+            
+        except Exception as e:
+            self.logger.error(f"Error processing audio with VAD for user {user}: {e}")
+
+    async def _on_speech_start(self, user=None, metadata=None):
+        """Handle start of speech detected by VAD."""
+        user_info = user.name if user and hasattr(user, "name") else getattr(user, "user_id", "unknown") if user else "unknown"
+        self.logger.debug(f"🎙️ Speech started: {user_info}")
+
+    async def _on_speech_end(self, user=None, metadata=None):
+        """Handle end of speech detected by VAD."""
+        user_info = user.name if user and hasattr(user, "name") else getattr(user, "user_id", "unknown") if user else "unknown"
+        self.logger.debug(f"🎙️ Speech ended: {user_info}")
+
+    async def _on_transcript(self, text: str, user=None, metadata=None):
         """Handle final transcript from STT service."""
         if text and text.strip():
-            self.logger.info(f"🎤 Heard: {text}")
-            await self._process_transcription(text)
+            user_info = user.name if user and hasattr(user, "name") else getattr(user, "user_id", "unknown") if user else "unknown"
+            self.logger.info(f"🎤 [{user_info}]: {text}")
+            
+            # Log confidence if available
+            if metadata and metadata.get("confidence"):
+                self.logger.debug(f"    └─ confidence: {metadata['confidence']:.2%}")
+            
+            await self._process_transcription(text, user)
 
-    async def _on_partial_transcript(
-        self, text: str, user_metadata=None, metadata=None
-    ):
+    async def _on_partial_transcript(self, text: str, user=None, metadata=None):
         """Handle partial transcript from STT service."""
-        # For now, we'll ignore partial transcripts to avoid responding to incomplete speech
-        self.logger.debug(f"🎤 Partial: {text}")
+        if text and text.strip():
+            user_info = user.name if user and hasattr(user, "name") else getattr(user, "user_id", "unknown") if user else "unknown"
+            self.logger.debug(f"🎤 [{user_info}] (partial): {text}")
 
-    async def _process_transcription(self, text: str) -> None:
+    async def _on_stt_error(self, error):
+        """Handle STT service errors."""
+        self.logger.error(f"❌ STT Error: {error}")
+
+    async def _process_transcription(self, text: str, user=None) -> None:
         """Process a complete transcription and generate response."""
         try:
             # Process with pre-processors
@@ -373,11 +426,17 @@ Generate a brief, friendly greeting for them.
             # This would need to be implemented based on the actual Stream SDK
             pass
 
-        # Clean up STT service
+        # Clean up audio services
         if self.stt:
             try:
                 await self.stt.close()
             except Exception as e:
                 self.logger.warning(f"Error closing STT service: {e}")
+        
+        if self.vad:
+            try:
+                await self.vad.close()
+            except Exception as e:
+                self.logger.warning(f"Error closing VAD service: {e}")
 
         self._is_running = False

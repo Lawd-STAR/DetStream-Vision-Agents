@@ -17,7 +17,11 @@ import aiortc
 from PIL import Image
 from getstream.video import rtc
 from getstream.video.rtc import audio_track
-from getstream.video.rtc.tracks import SubscriptionConfig, TrackSubscriptionConfig, TrackType
+from getstream.video.rtc.tracks import (
+    SubscriptionConfig,
+    TrackSubscriptionConfig,
+    TrackType,
+)
 
 # Import STT, TTS, and VAD base classes from stream-py package
 from getstream.plugins.common.stt import STT
@@ -62,8 +66,10 @@ class TurnDetection(Protocol):
 
 class ImageProcessor(Protocol):
     """Protocol for image processors."""
-    
-    async def process_image(self, image: Image.Image, user_id: str, metadata: dict = None) -> None:
+
+    async def process_image(
+        self, image: Image.Image, user_id: str, metadata: dict = None
+    ) -> None:
         """Process a video frame image."""
         ...
 
@@ -75,8 +81,7 @@ class Agent:
     Example usage:
         agent = Agent(
             instructions="Roast my in-game performance in a funny but encouraging manner",
-            tools=[dota_api("gameid")],
-            pre_processors=[Roboflow()],
+            pre_processors=[Roboflow(), dota_api("gameid")],
             model=openai_model,
             stt=speech_to_text,
             tts=text_to_speech,
@@ -138,29 +143,35 @@ class Agent:
         self._is_running = False
 
         self.logger = logging.getLogger(f"Agent[{self.bot_id}]")
-    
+
     async def _process_video_track(self, track_id: str, track_type: str, user):
         """Process video frames from a specific track."""
-        self.logger.info(f"🎥 Processing video track: {track_id} from user {user.user_id} (type: {track_type})")
-        
+        self.logger.info(
+            f"🎥 Processing video track: {track_id} from user {user.user_id} (type: {track_type})"
+        )
+
         # Only process video tracks
         if track_type != "video":
             self.logger.debug(f"Ignoring non-video track: {track_type}")
             return
-        
+
         # If target_user_id is specified, only process that user's video
         if self.target_user_id and user.user_id != self.target_user_id:
-            self.logger.debug(f"Ignoring video from user {user.user_id} (target: {self.target_user_id})")
+            self.logger.debug(
+                f"Ignoring video from user {user.user_id} (target: {self.target_user_id})"
+            )
             return
-        
+
         # Subscribe to the video track
         track = self._connection.subscriber_pc.add_track_subscriber(track_id)
         if not track:
             self.logger.error(f"❌ Failed to subscribe to track: {track_id}")
             return
-        
-        self.logger.info(f"✅ Successfully subscribed to video track from {user.user_id}")
-        
+
+        self.logger.info(
+            f"✅ Successfully subscribed to video track from {user.user_id}"
+        )
+
         try:
             while True:
                 try:
@@ -168,32 +179,36 @@ class Agent:
                     video_frame: aiortc.mediastreams.VideoFrame = await track.recv()
                     if not video_frame:
                         continue
-                    
+
                     # Convert to PIL Image
                     img = video_frame.to_image()
-                    
+
                     # Process through all image processors
                     for processor in self.image_processors:
                         try:
                             await processor.process_image(
-                                img, 
-                                user.user_id, 
+                                img,
+                                user.user_id,
                                 metadata={
                                     "track_id": track_id,
-                                    "timestamp": asyncio.get_event_loop().time()
-                                }
+                                    "timestamp": asyncio.get_event_loop().time(),
+                                },
                             )
                         except Exception as e:
-                            self.logger.error(f"❌ Error in image processor {type(processor).__name__}: {e}")
-                        
+                            self.logger.error(
+                                f"❌ Error in image processor {type(processor).__name__}: {e}"
+                            )
+
                 except Exception as e:
                     if "Connection closed" in str(e) or "Track ended" in str(e):
-                        self.logger.info(f"🔌 Video track ended for user {user.user_id}")
+                        self.logger.info(
+                            f"🔌 Video track ended for user {user.user_id}"
+                        )
                         break
                     else:
                         self.logger.error(f"❌ Error processing video frame: {e}")
                         await asyncio.sleep(1)  # Brief pause before retry
-                        
+
         except Exception as e:
             self.logger.error(f"❌ Fatal error in video processing: {e}")
             self.logger.error(traceback.format_exc())
@@ -227,13 +242,17 @@ class Agent:
             subscription_config = None
             if self.image_processors:
                 subscription_config = SubscriptionConfig(
-                    default=TrackSubscriptionConfig(track_types=[
-                        TrackType.TRACK_TYPE_VIDEO,
-                        TrackType.TRACK_TYPE_AUDIO,
-                    ])
+                    default=TrackSubscriptionConfig(
+                        track_types=[
+                            TrackType.TRACK_TYPE_VIDEO,
+                            TrackType.TRACK_TYPE_AUDIO,
+                        ]
+                    )
                 )
-            
-            async with await rtc.join(call, self.bot_id, subscription_config=subscription_config) as connection:
+
+            async with await rtc.join(
+                call, self.bot_id, subscription_config=subscription_config
+            ) as connection:
                 self._connection = connection
                 self._is_running = True
 
@@ -276,7 +295,7 @@ class Agent:
                     await self.stt.close()
                 except Exception as e:
                     self.logger.warning(f"Error closing STT service: {e}")
-            
+
             if self.vad:
                 try:
                     await self.vad.close()
@@ -311,13 +330,16 @@ class Agent:
 
         # Set up video track handler if image processors are configured
         if self.image_processors and self._connection:
+
             def on_track_added(track_id, track_type, user):
-                self.logger.info(f"🎬 New track detected: {track_id} ({track_type}) from {user.user_id}")
+                self.logger.info(
+                    f"🎬 New track detected: {track_id} ({track_type}) from {user.user_id}"
+                )
                 if track_type == "video":
                     asyncio.create_task(
                         self._process_video_track(track_id, track_type, user)
                     )
-            
+
             self._connection.on("track_added", on_track_added)
 
         # Safely set up event handlers
@@ -370,7 +392,7 @@ class Agent:
 
         try:
             # Check if it's our turn to respond (if turn detection is configured)
-            if self.turn_detection and hasattr(pcm_data, 'data'):
+            if self.turn_detection and hasattr(pcm_data, "data"):
                 if not self.turn_detection.detect_turn(pcm_data.data):
                     return
 
@@ -403,38 +425,62 @@ class Agent:
 
             # Process audio through VAD first
             await self.vad.process_audio(pcm_data, user)
-            
+
             # VAD will trigger speech events that route to STT when appropriate
-            
+
         except Exception as e:
             self.logger.error(f"Error processing audio with VAD for user {user}: {e}")
 
     async def _on_speech_start(self, user=None, metadata=None):
         """Handle start of speech detected by VAD."""
-        user_info = user.name if user and hasattr(user, "name") else getattr(user, "user_id", "unknown") if user else "unknown"
+        user_info = (
+            user.name
+            if user and hasattr(user, "name")
+            else getattr(user, "user_id", "unknown")
+            if user
+            else "unknown"
+        )
         self.logger.debug(f"🎙️ Speech started: {user_info}")
 
     async def _on_speech_end(self, user=None, metadata=None):
         """Handle end of speech detected by VAD."""
-        user_info = user.name if user and hasattr(user, "name") else getattr(user, "user_id", "unknown") if user else "unknown"
+        user_info = (
+            user.name
+            if user and hasattr(user, "name")
+            else getattr(user, "user_id", "unknown")
+            if user
+            else "unknown"
+        )
         self.logger.debug(f"🎙️ Speech ended: {user_info}")
 
     async def _on_transcript(self, text: str, user=None, metadata=None):
         """Handle final transcript from STT service."""
         if text and text.strip():
-            user_info = user.name if user and hasattr(user, "name") else getattr(user, "user_id", "unknown") if user else "unknown"
+            user_info = (
+                user.name
+                if user and hasattr(user, "name")
+                else getattr(user, "user_id", "unknown")
+                if user
+                else "unknown"
+            )
             self.logger.info(f"🎤 [{user_info}]: {text}")
-            
+
             # Log confidence if available
             if metadata and metadata.get("confidence"):
                 self.logger.debug(f"    └─ confidence: {metadata['confidence']:.2%}")
-            
+
             await self._process_transcription(text, user)
 
     async def _on_partial_transcript(self, text: str, user=None, metadata=None):
         """Handle partial transcript from STT service."""
         if text and text.strip():
-            user_info = user.name if user and hasattr(user, "name") else getattr(user, "user_id", "unknown") if user else "unknown"
+            user_info = (
+                user.name
+                if user and hasattr(user, "name")
+                else getattr(user, "user_id", "unknown")
+                if user
+                else "unknown"
+            )
             self.logger.debug(f"🎤 [{user_info}] (partial): {text}")
 
     async def _on_stt_error(self, error):
@@ -533,7 +579,7 @@ Generate a brief, friendly greeting for them.
                 await self.stt.close()
             except Exception as e:
                 self.logger.warning(f"Error closing STT service: {e}")
-        
+
         if self.vad:
             try:
                 await self.vad.close()

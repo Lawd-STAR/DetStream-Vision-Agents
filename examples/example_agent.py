@@ -25,6 +25,8 @@ from dotenv import load_dotenv
 from getstream.models import UserRequest
 from getstream.stream import Stream
 from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
+from getstream.plugins.deepgram.stt import DeepgramSTT
+
 
 from agents import Agent
 
@@ -119,6 +121,7 @@ async def main() -> None:
     
     # Create TTS service
     tts = ElevenLabsTTS()  # API key picked from ELEVENLABS_API_KEY
+    stt = DeepgramSTT()
     
     # Create agent with the requested syntax
     agent = Agent(
@@ -126,7 +129,7 @@ async def main() -> None:
         tools=[dota_api("game123")],
         pre_processors=[Roboflow()],
         # model=None,  # Would be set to your AI model
-        # stt=None,    # Would be set to your STT service  
+        stt=stt,    # Would be set to your STT service  
         tts=tts,
         # turn_detection=None,  # Would be set to your turn detection service
         name="Dota Roast Bot"
@@ -140,7 +143,11 @@ async def main() -> None:
     try:
         # Join the call using the agent
         await agent.join(call, user_creation_callback=create_bot_user)
-        
+        agent.stt.on("transcript", on_transcript)
+        async def on_transcript(text: str, user: any, metadata: dict):
+            print(f"Transcript: {text}")
+            print(f"User: {user}")
+            print(f"Metadata: {metadata}")
     except asyncio.CancelledError:
         logging.info("Stopping agent...")
     finally:

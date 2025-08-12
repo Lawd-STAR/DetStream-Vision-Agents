@@ -15,4 +15,5 @@ dependencies = [
     "openai>=1.99.8",
     "pillow>=11.3.0",
     "aiortc>=1.13.0",
+    "getstream-plugins-deepgram>=0.1.0",
 ]

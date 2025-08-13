@@ -1,3 +1,5 @@
+from openai import api_keyfrom openai import api_key
+
 # Open Agents by Stream
 
 Low latency video and voice AI agents on [Stream's edge network](https://getstream.io/video/).
@@ -36,10 +38,9 @@ from agents import Agent
 # load docs from @ai-dota-coaching.md
 # use speech to speech (STS) gemini model
 agent = Agent(
-    instructions="Roast my in-game performance in a funny but encouraging manner. Follow coaching tips in @ai-dota-coaching.md",
     pre_processors=[Roboflow(), dota_api("gameid")],
     interval=1 second,
-    sts_model=GeminiSTS(), 
+    sts=GeminiSTS(), 
     # turn_detection=your_turn_detector
 )
 
@@ -72,24 +73,32 @@ from agents import Agent
 from models import OpenAIModel
 
 # Create an AI model
-model = OpenAIModel(
-    name="gpt-4o-mini",
-    default_temperature=0.8
+llm = OpenAILLM(
+    api_key="<your-api-key>",
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello there"},
+    ],
+    default_temperature=0.8,
 )
 
 # Create an agent with the exact syntax you requested
 agent = Agent(
-    instructions="Talk to me about stock performance",
-    pre_processors=[Roboflow()],
-    model=model,
     stt=your_stt_service,
+    pre_processors=[Roboflow()],
+    llm=llm,
     tts=your_tts_service,
     turn_detection=your_turn_detector
 )
 
-speechToSpeechtAgent = Agent(
-    instructions="Talk to me about stock performance",
-    sts=model,
+sts_model = OpenAIRealtime(
+    api_key="<your-api-key>",
+    model="gpt-4o-realtime-preview",
+    voice="Pluck"
+)
+speechToSpeechAgent = Agent(
+    sts=sts_model,
 )
 
 # Join a Stream video call
@@ -149,10 +158,9 @@ OPENAI_API_KEY=your_openai_api_key
 
 ```python
 agent = Agent(
-    instructions="Your AI personality",
     tools=[external_api_tool],           # External API integrations
     pre_processors=[data_processor],     # Input data processing  
-    model=ai_model,                      # AI model for responses
+    llm=ai_model,                      # AI model for responses
     stt=speech_to_text,                  # Speech recognition
     tts=text_to_speech,                  # Voice synthesis
     turn_detection=turn_detector         # Conversation management

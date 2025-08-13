@@ -26,7 +26,7 @@ class MockPreProcessor:
         return f"processed_{data}"
 
 
-class MockModel:
+class MockLLM:
     """Mock AI model for testing."""
 
     async def generate(self, prompt, **kwargs):
@@ -150,7 +150,7 @@ class TestAgent:
         instructions = "Test instructions"
         tools = [MockTool()]
         pre_processors = [MockPreProcessor()]
-        model = MockModel()
+        llm = MockLLM()
         stt = MockSTT()
         tts = MockTTS()
         vad = MockVAD()
@@ -160,7 +160,7 @@ class TestAgent:
             instructions=instructions,
             tools=tools,
             pre_processors=pre_processors,
-            model=model,
+            llm=llm,
             stt=stt,
             tts=tts,
             vad=vad,
@@ -171,7 +171,7 @@ class TestAgent:
         assert agent.instructions == instructions
         assert agent.tools == tools
         assert agent.pre_processors == pre_processors
-        assert agent.model == model
+        assert agent.llm == llm
         assert agent.stt == stt
         assert agent.tts == tts
         assert agent.vad == vad
@@ -187,7 +187,7 @@ class TestAgent:
         assert agent.instructions == "Test instructions"
         assert agent.tools == []
         assert agent.pre_processors == []
-        assert agent.model is None
+        assert agent.llm is None
         assert agent.stt is None
         assert agent.tts is None
         assert agent.vad is None
@@ -206,8 +206,8 @@ class TestAgent:
     @pytest.mark.asyncio
     async def test_generate_response(self):
         """Test response generation with model."""
-        model = MockModel()
-        agent = Agent(instructions="Test instructions", model=model)
+        llm = MockLLM()
+        agent = Agent(instructions="Test instructions", llm=llm)
 
         response = await agent._generate_response("test input")
 
@@ -215,8 +215,8 @@ class TestAgent:
         assert "test input" in response
 
     @pytest.mark.asyncio
-    async def test_generate_response_without_model(self):
-        """Test response generation without model."""
+    async def test_generate_response_without_llm(self):
+        """Test response generation without LLM."""
         agent = Agent(instructions="Test instructions")
 
         response = await agent._generate_response("test input")
@@ -225,11 +225,11 @@ class TestAgent:
 
     @pytest.mark.asyncio
     async def test_generate_response_with_error(self):
-        """Test response generation when model raises error."""
-        model = Mock()
-        model.generate = AsyncMock(side_effect=Exception("Model error"))
+        """Test response generation when LLM raises error."""
+        llm = Mock()
+        llm.generate = AsyncMock(side_effect=Exception("LLM error"))
 
-        agent = Agent(instructions="Test instructions", model=model)
+        agent = Agent(instructions="Test instructions", llm=llm)
 
         response = await agent._generate_response("test input")
 
@@ -274,7 +274,7 @@ class TestAgent:
         """Test full audio input processing pipeline."""
         tools = [MockTool("tool_result")]
         pre_processors = [MockPreProcessor()]
-        model = MockModel()
+        llm = MockLLM()
         stt = MockSTT()
         tts = MockTTS()
         turn_detection = MockTurnDetection()
@@ -283,7 +283,7 @@ class TestAgent:
             instructions="Test instructions",
             tools=tools,
             pre_processors=pre_processors,
-            model=model,
+            llm=llm,
             stt=stt,
             tts=tts,
             turn_detection=turn_detection,
@@ -383,14 +383,14 @@ class TestAgent:
         """Test audio handling integration end-to-end."""
         stt = MockSTT()
         tts = MockTTS()
-        model = MockModel()
+        llm = MockLLM()
         turn_detection = MockTurnDetection()  # Always returns True for testing
 
         agent = Agent(
             instructions="Test instructions",
             stt=stt,
             tts=tts,
-            model=model,
+            llm=llm,
             turn_detection=turn_detection,
         )
 
@@ -416,9 +416,9 @@ class TestAgent:
         """Test STT transcript event handler."""
         stt = MockSTT()
         tts = MockTTS()
-        model = MockModel()
+        llm = MockLLM()
 
-        agent = Agent(instructions="Test instructions", stt=stt, tts=tts, model=model)
+        agent = Agent(instructions="Test instructions", stt=stt, tts=tts, llm=llm)
 
         # Mock user object
         mock_user = Mock()
@@ -461,9 +461,9 @@ class TestAgent:
         """Test audio processing without VAD (direct STT)."""
         stt = MockSTT()
         tts = MockTTS()
-        model = MockModel()
+        llm = MockLLM()
 
-        agent = Agent(instructions="Test instructions", stt=stt, tts=tts, model=model)
+        agent = Agent(instructions="Test instructions", stt=stt, tts=tts, llm=llm)
 
         # Mock user object
         mock_user = Mock()
@@ -485,10 +485,10 @@ class TestAgent:
         stt = MockSTT()
         vad = MockVAD()
         tts = MockTTS()
-        model = MockModel()
+        llm = MockLLM()
 
         agent = Agent(
-            instructions="Test instructions", stt=stt, vad=vad, tts=tts, model=model
+            instructions="Test instructions", stt=stt, vad=vad, tts=tts, llm=llm
         )
 
         # Mock user object

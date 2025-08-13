@@ -18,7 +18,6 @@ import av
 from PIL import Image
 from getstream.video import rtc
 from getstream.video.rtc import audio_track
-import numpy as np
 from getstream.video.rtc.tracks import (
     SubscriptionConfig,
     TrackSubscriptionConfig,
@@ -48,7 +47,7 @@ class PreProcessor(Protocol):
         ...
 
 
-class Model(Protocol):
+class LLM(Protocol):
     """Protocol for AI models."""
 
     async def generate(self, prompt: str, **kwargs) -> str:
@@ -90,11 +89,15 @@ class TransformedVideoTrack(aiortc.VideoStreamTrack):
 
     def __init__(self):
         super().__init__()
-        self.frame_q = asyncio.Queue(maxsize=10)  # Limit queue size to prevent memory issues
+        self.frame_q = asyncio.Queue(
+            maxsize=10
+        )  # Limit queue size to prevent memory issues
         # Create a subtle blue-tinted frame as fallback (to show the transformer is ready)
-        default_frame = Image.new('RGB', (640, 480), color=(20, 30, 80))  # Subtle blue-gray
+        default_frame = Image.new(
+            "RGB", (640, 480), color=(20, 30, 80)
+        )  # Subtle blue-gray
         self.last_frame = default_frame
-        
+
     async def add_frame(self, pil_image: Image.Image):
         """Add a transformed PIL Image frame to be published."""
         try:
@@ -108,7 +111,7 @@ class TransformedVideoTrack(aiortc.VideoStreamTrack):
                     self.frame_q.put_nowait(pil_image)
                 except asyncio.QueueEmpty:
                     pass
-                    
+
         except Exception as e:
             print(f"Error adding frame to video track: {e}")
 
@@ -124,23 +127,23 @@ class TransformedVideoTrack(aiortc.VideoStreamTrack):
             pass
         except Exception as e:
             print(f"Error getting frame from queue: {e}")
-        
+
         # Always return a frame - this is essential for continuous video
         try:
             # Get proper timestamp using aiortc's timing
             pts, time_base = await self.next_timestamp()
-            
+
             # Convert PIL Image to av.VideoFrame
             av_frame = av.VideoFrame.from_image(self.last_frame)
             av_frame.pts = pts
             av_frame.time_base = time_base
-            
+
             return av_frame
         except Exception as e:
             print(f"Error creating av.VideoFrame: {e}")
             # Fallback: create a simple frame
             pts, time_base = await self.next_timestamp()
-            fallback_frame = Image.new('RGB', (640, 480), color=(100, 100, 100))  # Gray
+            fallback_frame = Image.new("RGB", (640, 480), color=(100, 100, 100))  # Gray
             av_frame = av.VideoFrame.from_image(fallback_frame)
             av_frame.pts = pts
             av_frame.time_base = time_base
@@ -184,7 +187,7 @@ class Agent:
         instructions: str,
         tools: Optional[List[Tool]] = None,
         pre_processors: Optional[List[PreProcessor]] = None,
-        model: Optional[Model] = None,
+        llm: Optional[LLM] = None,
         stt: Optional[STT] = None,
         tts: Optional[TTS] = None,
         vad: Optional[VAD] = None,
@@ -204,7 +207,7 @@ class Agent:
             instructions: System instructions for the agent
             tools: List of tools the agent can use
             pre_processors: List of pre-processors for input data
-            model: AI model for generating responses
+            llm: AI model for generating responses
             stt: Speech-to-Text service
             tts: Text-to-Speech service
             vad: Voice Activity Detection service (optional)
@@ -221,7 +224,7 @@ class Agent:
         self.instructions = instructions
         self.tools = tools or []
         self.pre_processors = pre_processors or []
-        self.model = model
+        self.llm = llm
         self.stt = stt
         self.tts = tts
         self.vad = vad
@@ -253,10 +256,10 @@ class Agent:
                 "STS (Speech-to-Speech) models handle both speech-to-text and text-to-speech internally."
             )
 
-        if sts_model and model:
+        if sts_model and llm:
             self.logger.warning(
-                "Using STS model with a separate model parameter. "
-                "The STS model will handle conversation flow, and the model parameter will be ignored."
+                "Using STS model with a separate llm parameter. "
+                "The STS model will handle conversation flow, and the llm parameter will be ignored."
             )
 
     async def _process_video_track(self, track_id: str, track_type: str, user):
@@ -302,11 +305,11 @@ class Agent:
                     if self.video_transformer:
                         try:
                             img = await self.video_transformer.transform_frame(img)
-                            
+
                             # Publish transformed frame to video track
                             if self._video_track:
                                 await self._video_track.add_frame(img)
-                                
+
                         except Exception as e:
                             self.logger.error(
                                 f"❌ Error in video transformer {type(self.video_transformer).__name__}: {e}"
@@ -681,7 +684,6 @@ class Agent:
 
             elif "DotaAPI" in processor_name and isinstance(data, dict):
                 # Format Dota API data
-                player_stats = data.get("player_stats", {})
                 analysis = data.get("analysis", {})
 
                 if analysis.get("issues"):
@@ -993,7 +995,7 @@ class Agent:
                 processed_data = processor.process(processed_data)
 
             # Generate response using model
-            if self.model:
+            if self.llm:
                 response = await self._generate_response(processed_data)
 
                 # Send response via TTS
@@ -1007,7 +1009,7 @@ class Agent:
 
     async def _generate_response(self, input_text: str) -> str:
         """Generate a response using the AI model."""
-        if not self.model:
+        if not self.llm:
             return ""
 
         try:
@@ -1022,7 +1024,7 @@ class Agent:
             Respond appropriately based on your instructions.
             """
 
-            response = await self.model.generate(context)
+            response = await self.llm.generate(context)
             return response
 
         except Exception as e:
@@ -1036,7 +1038,7 @@ class Agent:
 
     async def _generate_greeting(self, participant_count: int) -> str:
         """Generate a greeting message when joining a call."""
-        if self.model:
+        if self.llm:
             try:
                 context = f"""
                 System: {self.instructions}
@@ -1046,7 +1048,7 @@ class Agent:
                 Keep it under 2 sentences.
                 """
 
-                response = await self.model.generate(context)
+                response = await self.llm.generate(context)
                 return response
             except Exception as e:
                 self.logger.error(f"Error generating greeting: {e}")
@@ -1056,7 +1058,7 @@ class Agent:
 
     async def _generate_participant_greeting(self, user_id: str) -> str:
         """Generate a greeting message for a new participant."""
-        if self.model:
+        if self.llm:
             try:
                 context = f"""
                 System: {self.instructions}
@@ -1066,7 +1068,7 @@ class Agent:
                 Keep it under 2 sentences.
                 """
 
-                response = await self.model.generate(context)
+                response = await self.llm.generate(context)
                 return response
             except Exception as e:
                 self.logger.error(f"Error generating participant greeting: {e}")

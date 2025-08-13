@@ -196,7 +196,6 @@ async def main(game_id: str = "match_123456", interval: int = 1):
 
     # Create Agent with the exact syntax requested
     agent = Agent(
-        instructions="Roast my in-game performance in a funny but encouraging manner. Follow coaching tips in @ai-dota-coaching.md",
         pre_processors=[yolo_processor, dota_api_processor],
         image_interval=interval,  # Process every interval seconds
         sts_model=sts_model,

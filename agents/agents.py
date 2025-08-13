@@ -165,7 +165,6 @@ class Agent:
     Example usage:
         # Traditional STT -> Model -> TTS pipeline
         agent = Agent(
-            instructions="Roast my in-game performance in a funny but encouraging manner",
             pre_processors=[Roboflow(), dota_api("gameid")],
             model=openai_model,
             stt=speech_to_text,
@@ -175,7 +174,6 @@ class Agent:
 
         # OpenAI Realtime STS mode
         agent = Agent(
-            instructions="You are a helpful assistant",
             sts_model=openai_realtime_sts
         )
 
@@ -184,7 +182,6 @@ class Agent:
 
     def __init__(
         self,
-        instructions: str,
         tools: Optional[List[Tool]] = None,
         pre_processors: Optional[List[PreProcessor]] = None,
         llm: Optional[LLM] = None,
@@ -204,7 +201,6 @@ class Agent:
         Initialize the Agent.
 
         Args:
-            instructions: System instructions for the agent
             tools: List of tools the agent can use
             pre_processors: List of pre-processors for input data
             llm: AI model for generating responses
@@ -221,7 +217,6 @@ class Agent:
             bot_id: Unique bot ID (auto-generated if not provided)
             name: Display name for the bot
         """
-        self.instructions = instructions
         self.tools = tools or []
         self.pre_processors = pre_processors or []
         self.llm = llm
@@ -1015,7 +1010,6 @@ class Agent:
         try:
             # Create context with instructions and available tools
             context = f"""
-            System: {self.instructions}
             
             Available tools: {[str(tool) for tool in self.tools]}
             
@@ -1041,7 +1035,6 @@ class Agent:
         if self.llm:
             try:
                 context = f"""
-                System: {self.instructions}
                 
                 You are joining a video call with {participant_count} participant(s).
                 Generate a brief, friendly greeting to introduce yourself.
@@ -1061,7 +1054,6 @@ class Agent:
         if self.llm:
             try:
                 context = f"""
-                System: {self.instructions}
                 
                 A new participant (user-{user_id}) has joined the call.
                 Generate a brief, friendly greeting to welcome them.

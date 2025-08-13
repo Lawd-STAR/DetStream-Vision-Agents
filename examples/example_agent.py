@@ -125,10 +125,9 @@ async def main() -> None:
 
     # Create agent with the requested syntax
     agent = Agent(
-        instructions="Roast my in-game performance in a funny but encouraging manner",
         tools=[dota_api("game123")],
         pre_processors=[Roboflow()],
-        # model=None,  # Would be set to your AI model
+        # llm=None,  # Would be set to your AI model
         stt=stt,  # Would be set to your STT service
         tts=tts,
         # turn_detection=None,  # Would be set to your turn detection service

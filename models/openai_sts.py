@@ -30,7 +30,6 @@ class OpenAIRealtimeModel:
         )
 
         agent = Agent(
-            instructions="You are a helpful assistant.",
             sts_model=sts_model
         )
 
@@ -39,6 +38,10 @@ class OpenAIRealtimeModel:
             api_key="your-openai-api-key",
             voice="nova",
             instructions="You are a helpful assistant with access to tools."
+        )
+
+        agent = Agent(
+            sts_model=sts_model
         )
 
         await agent.join(call)

@@ -264,7 +264,6 @@ async def main(interval: int = 5, output_dir: str = "blue_frames", capture_frame
 
     # Create Agent with blue video transformer
     agent = Agent(
-        instructions="I am a blue video transformer bot that applies a blue tint to video frames.",
         video_transformer=blue_transformer,  # Use our blue transformer
         image_interval=interval if capture_frames else None,
         image_processors=image_processors,

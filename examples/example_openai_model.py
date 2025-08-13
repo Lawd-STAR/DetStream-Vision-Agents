@@ -75,13 +75,12 @@ async def test_agent_with_openai_model():
 
     # Create agent with OpenAI model
     agent = Agent(
-        instructions="You are a friendly AI assistant that gives concise, helpful responses.",
-        model=model,
+        llm=model,
         name="OpenAI Assistant",
     )
 
     print(f"Agent: {agent.name}")
-    print(f"Agent model: {agent.model}")
+    print(f"Agent model: {agent.llm}")
     print(f"Agent bot ID: {agent.bot_id}")
 
     # Test response generation through agent

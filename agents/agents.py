@@ -10,13 +10,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import traceback
-from typing import Any, Callable, List, Optional, Protocol
+from typing import Any, Callable, Dict, List, Optional, Protocol
 from uuid import uuid4
 
 import aiortc
+import av
 from PIL import Image
 from getstream.video import rtc
 from getstream.video.rtc import audio_track
+import numpy as np
 from getstream.video.rtc.tracks import (
     SubscriptionConfig,
     TrackSubscriptionConfig,
@@ -75,6 +77,76 @@ class ImageProcessor(Protocol):
         ...
 
 
+class VideoTransformer(Protocol):
+    """Protocol for video transformers that modify video frames."""
+
+    async def transform_frame(self, frame: Image.Image) -> Image.Image:
+        """Transform a video frame and return the modified frame."""
+        ...
+
+
+class TransformedVideoTrack(aiortc.VideoStreamTrack):
+    """Custom video stream track for publishing transformed video frames."""
+
+    def __init__(self):
+        super().__init__()
+        self.frame_q = asyncio.Queue(maxsize=10)  # Limit queue size to prevent memory issues
+        # Create a subtle blue-tinted frame as fallback (to show the transformer is ready)
+        default_frame = Image.new('RGB', (640, 480), color=(20, 30, 80))  # Subtle blue-gray
+        self.last_frame = default_frame
+        
+    async def add_frame(self, pil_image: Image.Image):
+        """Add a transformed PIL Image frame to be published."""
+        try:
+            # Add frame to queue (drop old frames if queue is full)
+            try:
+                self.frame_q.put_nowait(pil_image)
+            except asyncio.QueueFull:
+                # Drop the oldest frame and add the new one
+                try:
+                    self.frame_q.get_nowait()
+                    self.frame_q.put_nowait(pil_image)
+                except asyncio.QueueEmpty:
+                    pass
+                    
+        except Exception as e:
+            print(f"Error adding frame to video track: {e}")
+
+    async def recv(self) -> av.VideoFrame:
+        """Return the next video frame for WebRTC transmission."""
+        try:
+            # Try to get the latest frame from queue with a very short timeout
+            frame = await asyncio.wait_for(self.frame_q.get(), timeout=0.02)
+            if frame:
+                self.last_frame = frame
+        except asyncio.TimeoutError:
+            # Use the last frame if no new frame is available - this is critical!
+            pass
+        except Exception as e:
+            print(f"Error getting frame from queue: {e}")
+        
+        # Always return a frame - this is essential for continuous video
+        try:
+            # Get proper timestamp using aiortc's timing
+            pts, time_base = await self.next_timestamp()
+            
+            # Convert PIL Image to av.VideoFrame
+            av_frame = av.VideoFrame.from_image(self.last_frame)
+            av_frame.pts = pts
+            av_frame.time_base = time_base
+            
+            return av_frame
+        except Exception as e:
+            print(f"Error creating av.VideoFrame: {e}")
+            # Fallback: create a simple frame
+            pts, time_base = await self.next_timestamp()
+            fallback_frame = Image.new('RGB', (640, 480), color=(100, 100, 100))  # Gray
+            av_frame = av.VideoFrame.from_image(fallback_frame)
+            av_frame.pts = pts
+            av_frame.time_base = time_base
+            return av_frame
+
+
 class Agent:
     """
     AI Agent that can join Stream video calls and interact with participants.
@@ -120,6 +192,7 @@ class Agent:
         sts_model: Optional[STS] = None,
         image_interval: Optional[int] = None,
         image_processors: Optional[List[ImageProcessor]] = None,
+        video_transformer: Optional[VideoTransformer] = None,
         target_user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         name: Optional[str] = None,
@@ -140,6 +213,7 @@ class Agent:
                       When provided, stt and tts are ignored
             image_interval: Interval in seconds for image processing (None to disable)
             image_processors: List of image processors to apply to video frames
+            video_transformer: Video transformer to modify video frames before processing
             target_user_id: Specific user to capture video from (None for all users)
             bot_id: Unique bot ID (auto-generated if not provided)
             name: Display name for the bot
@@ -155,6 +229,7 @@ class Agent:
         self.sts_model = sts_model
         self.image_interval = image_interval
         self.image_processors = image_processors or []
+        self.video_transformer = video_transformer
         self.target_user_id = target_user_id
         self.bot_id = bot_id or f"agent-{uuid4()}"
         self.name = name or "AI Agent"
@@ -165,6 +240,7 @@ class Agent:
 
         self._connection: Optional[rtc.RTCConnection] = None
         self._audio_track: Optional[audio_track.AudioStreamTrack] = None
+        self._video_track: Optional[TransformedVideoTrack] = None
         self._is_running = False
         self._callback_executed = False
 
@@ -221,6 +297,20 @@ class Agent:
 
                     # Convert to PIL Image
                     img = video_frame.to_image()
+
+                    # Apply video transformation if configured
+                    if self.video_transformer:
+                        try:
+                            img = await self.video_transformer.transform_frame(img)
+                            
+                            # Publish transformed frame to video track
+                            if self._video_track:
+                                await self._video_track.add_frame(img)
+                                
+                        except Exception as e:
+                            self.logger.error(
+                                f"❌ Error in video transformer {type(self.video_transformer).__name__}: {e}"
+                            )
 
                     # Store current frame for interval processing
                     self._current_frame = img
@@ -308,10 +398,15 @@ class Agent:
             self._audio_track = audio_track.AudioStreamTrack(framerate=16000)
             self.tts.set_output_track(self._audio_track)
 
+        # Set up video track if video transformer is available
+        if self.video_transformer:
+            self._video_track = TransformedVideoTrack()
+            self.logger.info("🎥 Video track initialized for transformation publishing")
+
         try:
             # Configure subscription based on whether video processing is enabled
             subscription_config = None
-            if self.image_processors:
+            if self.image_processors or self.video_transformer:
                 subscription_config = SubscriptionConfig(
                     default=TrackSubscriptionConfig(
                         track_types=[
@@ -333,6 +428,11 @@ class Agent:
                 if self._audio_track:
                     await connection.add_tracks(audio=self._audio_track)
                     self.logger.info("🤖 Agent ready to speak")
+
+                # Set up video track if available
+                if self._video_track:
+                    await connection.add_tracks(video=self._video_track)
+                    self.logger.info("🎥 Agent ready to publish transformed video")
 
                 # Set up event handlers
                 await self._setup_event_handlers()
@@ -712,8 +812,8 @@ class Agent:
                 self.logger.error(f"Error handling audio received event: {e}")
                 self.logger.error(traceback.format_exc())
 
-        # Set up video track handler if image processors are configured
-        if self.image_processors and self._connection:
+        # Set up video track handler if image processors or video transformer are configured
+        if (self.image_processors or self.video_transformer) and self._connection:
 
             def on_track_added(track_id, track_type, user):
                 user_id = user.user_id if user else "unknown"

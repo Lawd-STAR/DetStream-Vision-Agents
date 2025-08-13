@@ -21,7 +21,7 @@ If you prefer Twilio, Cloudflare, Antmedia or Mediasoup you're welcome to use th
 
 ```bash
 # Install dependencies using uv
-uv add openai python-dotenv getstream
+uv add openai python-dotenv getstreamt
 
 # Or with pip
 pip install openai python-dotenv getstream
@@ -39,7 +39,7 @@ agent = Agent(
     instructions="Roast my in-game performance in a funny but encouraging manner. Follow coaching tips in @ai-dota-coaching.md",
     pre_processors=[Roboflow(), dota_api("gameid")],
     interval=1 second,
-    sts=GeminiSTS(), 
+    sts_model=GeminiSTS(), 
     # turn_detection=your_turn_detector
 )
 

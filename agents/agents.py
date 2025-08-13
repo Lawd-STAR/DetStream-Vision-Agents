@@ -23,10 +23,11 @@ from getstream.video.rtc.tracks import (
     TrackType,
 )
 
-# Import STT, TTS, and VAD base classes from stream-py package
+# Import STT, TTS, VAD, and STS base classes from stream-py package
 from getstream.plugins.common.stt import STT
 from getstream.plugins.common.tts import TTS
 from getstream.plugins.common.vad import VAD
+from getstream.plugins.common.sts import STS
 
 
 class Tool(Protocol):
@@ -78,7 +79,16 @@ class Agent:
     """
     AI Agent that can join Stream video calls and interact with participants.
 
+    Note that the agent can run in several different modes:
+    - STS Model (Speech-to-Speech with OpenAI Realtime API)
+    - STT -> Model -> TTS (Traditional pipeline)
+    - Video AI/coach
+    - Video transformation
+
+    With either a mix or match of those.
+
     Example usage:
+        # Traditional STT -> Model -> TTS pipeline
         agent = Agent(
             instructions="Roast my in-game performance in a funny but encouraging manner",
             pre_processors=[Roboflow(), dota_api("gameid")],
@@ -87,6 +97,13 @@ class Agent:
             tts=text_to_speech,
             turn_detection=turn_detector
         )
+
+        # OpenAI Realtime STS mode
+        agent = Agent(
+            instructions="You are a helpful assistant",
+            sts_model=openai_realtime_sts
+        )
+
         await agent.join(call)
     """
 
@@ -100,6 +117,7 @@ class Agent:
         tts: Optional[TTS] = None,
         vad: Optional[VAD] = None,
         turn_detection: Optional[TurnDetection] = None,
+        sts_model: Optional[STS] = None,
         image_interval: Optional[int] = None,
         image_processors: Optional[List[ImageProcessor]] = None,
         target_user_id: Optional[str] = None,
@@ -118,6 +136,8 @@ class Agent:
             tts: Text-to-Speech service
             vad: Voice Activity Detection service (optional)
             turn_detection: Turn detection service
+            sts_model: Speech-to-Speech model (OpenAI Realtime API)
+                      When provided, stt and tts are ignored
             image_interval: Interval in seconds for image processing (None to disable)
             image_processors: List of image processors to apply to video frames
             target_user_id: Specific user to capture video from (None for all users)
@@ -132,11 +152,16 @@ class Agent:
         self.tts = tts
         self.vad = vad
         self.turn_detection = turn_detection
+        self.sts_model = sts_model
         self.image_interval = image_interval
         self.image_processors = image_processors or []
         self.target_user_id = target_user_id
         self.bot_id = bot_id or f"agent-{uuid4()}"
         self.name = name or "AI Agent"
+
+        # For STS + interval processing
+        self._current_frame = None
+        self._interval_task = None
 
         self._connection: Optional[rtc.RTCConnection] = None
         self._audio_track: Optional[audio_track.AudioStreamTrack] = None
@@ -144,6 +169,19 @@ class Agent:
         self._callback_executed = False
 
         self.logger = logging.getLogger(f"Agent[{self.bot_id}]")
+
+        # Validate STS vs STT/TTS configuration
+        if sts_model and (stt or tts):
+            raise ValueError(
+                "Cannot use both sts_model and stt/tts. "
+                "STS (Speech-to-Speech) models handle both speech-to-text and text-to-speech internally."
+            )
+
+        if sts_model and model:
+            self.logger.warning(
+                "Using STS model with a separate model parameter. "
+                "The STS model will handle conversation flow, and the model parameter will be ignored."
+            )
 
     async def _process_video_track(self, track_id: str, track_type: str, user):
         """Process video frames from a specific track."""
@@ -183,6 +221,9 @@ class Agent:
 
                     # Convert to PIL Image
                     img = video_frame.to_image()
+
+                    # Store current frame for interval processing
+                    self._current_frame = img
 
                     # Process through all image processors
                     for processor in self.image_processors:
@@ -239,7 +280,30 @@ class Agent:
         if user_creation_callback:
             user_creation_callback(self.bot_id, self.name)
 
-        # Set up audio track if TTS is available
+        # Handle STS model connection separately
+        if self.sts_model:
+            try:
+                self.logger.info("🤖 Connecting STS model to call")
+
+                # For STS mode, we need both STS connection and video processing if interval is specified
+                if self.image_interval and (
+                    self.pre_processors or self.image_processors
+                ):
+                    # STS with interval processing - need WebRTC for video
+                    await self._handle_sts_with_interval_processing(
+                        call, user_creation_callback, on_connected_callback
+                    )
+                else:
+                    # Pure STS mode - no video processing needed
+                    await self._handle_pure_sts_mode(call, on_connected_callback)
+
+                return
+
+            except Exception as e:
+                self.logger.error(f"❌ Failed to connect STS model: {e}")
+                raise
+
+        # Set up audio track if TTS is available (traditional mode)
         if self.tts:
             self._audio_track = audio_track.AudioStreamTrack(framerate=16000)
             self.tts.set_output_track(self._audio_track)
@@ -322,6 +386,232 @@ class Agent:
                 except Exception as e:
                     self.logger.warning(f"Error closing STT service: {e}")
                     self.logger.error(traceback.format_exc())
+
+    async def _handle_pure_sts_mode(self, call, on_connected_callback):
+        """Handle pure STS mode without video processing."""
+        async with await self.sts_model.connect(
+            call, agent_user_id=self.bot_id
+        ) as sts_connection:
+            self.logger.info("✅ STS model connected successfully")
+            self._sts_connection = sts_connection
+            self._is_running = True
+
+            # Execute callback after initialization
+            if on_connected_callback and not self._callback_executed:
+                self._callback_executed = True
+                asyncio.create_task(self._safe_sts_callback(on_connected_callback))
+
+            # Send initial greeting to activate the STS agent
+            if hasattr(self.sts_model, "send_user_message"):
+                await self.sts_model.send_user_message(
+                    "Please give a brief, friendly greeting to welcome the user to the call."
+                )
+            elif hasattr(self.sts_model, "send_message"):
+                await self.sts_model.send_message(
+                    "Please give a brief, friendly greeting to welcome the user to the call."
+                )
+
+            self.logger.info("🎧 STS Agent is active - press Ctrl+C to stop")
+
+            # Process STS events - this keeps the connection alive and handles audio
+            async for event in sts_connection:
+                self.logger.debug(f"🔔 STS Event: {event.type}")
+                # Handle any STS-specific events here if needed
+
+    async def _handle_sts_with_interval_processing(
+        self, call, user_creation_callback, on_connected_callback
+    ):
+        """Handle STS mode with interval-based video processing."""
+        # First establish STS connection
+        async with await self.sts_model.connect(
+            call, agent_user_id=self.bot_id
+        ) as sts_connection:
+            self.logger.info("✅ STS model connected successfully")
+            self._sts_connection = sts_connection
+
+            # Also join WebRTC for video processing
+            subscription_config = SubscriptionConfig(
+                default=TrackSubscriptionConfig(
+                    track_types=[
+                        TrackType.TRACK_TYPE_VIDEO,
+                        TrackType.TRACK_TYPE_AUDIO,
+                    ]
+                )
+            )
+
+            async with await rtc.join(
+                call, self.bot_id, subscription_config=subscription_config
+            ) as rtc_connection:
+                self._connection = rtc_connection
+                self._is_running = True
+
+                self.logger.info("✅ Agent joined for video processing")
+
+                # Set up video processing
+                await self._setup_event_handlers()
+
+                # Execute callback after initialization
+                if on_connected_callback and not self._callback_executed:
+                    self._callback_executed = True
+                    asyncio.create_task(self._safe_sts_callback(on_connected_callback))
+
+                # Start interval processing task
+                if self.image_interval:
+                    self._interval_task = asyncio.create_task(
+                        self._interval_processing_loop()
+                    )
+
+                # Send initial greeting
+                if hasattr(self.sts_model, "send_message"):
+                    await self.sts_model.send_message(
+                        f"Hello! I'm your Dota 2 coach. I'll be analyzing your gameplay every {self.image_interval} seconds and providing real-time feedback. Let's dominate this match!"
+                    )
+
+                self.logger.info(
+                    f"🎧 STS Agent with interval processing active (every {self.image_interval}s) - press Ctrl+C to stop"
+                )
+
+                # Process STS events in background
+                async def process_sts_events():
+                    try:
+                        async for event in sts_connection:
+                            self.logger.debug(f"🔔 STS Event: {event.type}")
+                    except Exception as e:
+                        self.logger.error(f"❌ Error processing STS events: {e}")
+
+                sts_task = asyncio.create_task(process_sts_events())
+
+                try:
+                    # Wait for WebRTC connection to end
+                    await rtc_connection.wait()
+                finally:
+                    # Clean up tasks
+                    if self._interval_task:
+                        self._interval_task.cancel()
+                        try:
+                            await self._interval_task
+                        except asyncio.CancelledError:
+                            pass
+
+                    sts_task.cancel()
+                    try:
+                        await sts_task
+                    except asyncio.CancelledError:
+                        pass
+
+    async def _interval_processing_loop(self):
+        """Run pre-processors and send data to STS model at regular intervals."""
+        while self._is_running:
+            try:
+                await asyncio.sleep(self.image_interval)
+
+                if not self._is_running:
+                    break
+
+                # Get current frame
+                current_frame = self._current_frame
+                if current_frame is None:
+                    self.logger.debug("No current frame available for processing")
+                    continue
+
+                self.logger.debug(
+                    f"🔄 Running interval processing (frame: {current_frame.size if current_frame else None})"
+                )
+
+                # Process through pre-processors
+                processed_data = {}
+                for i, processor in enumerate(self.pre_processors):
+                    try:
+                        # Check if processor has async process method
+                        if hasattr(
+                            processor, "process"
+                        ) and asyncio.iscoroutinefunction(processor.process):
+                            result = await processor.process(current_frame)
+                        else:
+                            result = processor.process(current_frame)
+                        processed_data[f"processor_{i}_{type(processor).__name__}"] = (
+                            result
+                        )
+                        self.logger.debug(
+                            f"✅ Processed through {type(processor).__name__}"
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"❌ Error in processor {type(processor).__name__}: {e}"
+                        )
+                        processed_data[
+                            f"processor_{i}_{type(processor).__name__}_error"
+                        ] = str(e)
+
+                # Send multimodal data to STS model
+                if hasattr(self.sts_model, "send_multimodal_data"):
+                    context_text = self._format_coaching_context(processed_data)
+                    await self.sts_model.send_multimodal_data(
+                        text=context_text, image=current_frame, data=processed_data
+                    )
+                    self.logger.debug("📤 Sent multimodal data to STS model")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"❌ Error in interval processing: {e}")
+                self.logger.error(traceback.format_exc())
+
+    def _format_coaching_context(self, processed_data: Dict) -> str:
+        """Format processed data into coaching context for the STS model."""
+        context_parts = []
+
+        for processor_name, data in processed_data.items():
+            if "error" in processor_name:
+                continue
+
+            if "YOLOProcessor" in processor_name and isinstance(data, dict):
+                # Format YOLO data
+                analysis = data.get("analysis", {})
+                if analysis.get("team_fight_detected"):
+                    context_parts.append(
+                        "🔥 TEAM FIGHT DETECTED! Analyze positioning and decision making."
+                    )
+                if analysis.get("farming_opportunity"):
+                    context_parts.append("🌾 Good farming opportunity available.")
+                if analysis.get("danger_level") == "high":
+                    context_parts.append(
+                        "⚠️ HIGH DANGER - Player may be in risky position."
+                    )
+
+            elif "DotaAPI" in processor_name and isinstance(data, dict):
+                # Format Dota API data
+                player_stats = data.get("player_stats", {})
+                analysis = data.get("analysis", {})
+
+                if analysis.get("issues"):
+                    issues = ", ".join(analysis["issues"])
+                    context_parts.append(f"Issues detected: {issues}")
+
+                if analysis.get("performance_score"):
+                    score = analysis["performance_score"]
+                    context_parts.append(f"Performance score: {score:.1f}/100")
+
+                if data.get("recommendations"):
+                    context_parts.append("Recommendations available in data.")
+
+        if context_parts:
+            return f"Current game analysis: {' '.join(context_parts)}"
+        else:
+            return "Analyzing current gameplay state..."
+
+    async def _safe_sts_callback(self, on_connected_callback):
+        """Safely execute the on_connected_callback for STS mode."""
+        try:
+            await asyncio.wait_for(
+                on_connected_callback(self, self._sts_connection),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            self.logger.error("❌ on_connected_callback timed out after 30 seconds")
+        except Exception as e:
+            self.logger.error(f"❌ Error in on_connected_callback: {e}")
+            self.logger.error(traceback.format_exc())
 
     async def say(self, message: str) -> None:
         """Send a message via TTS."""

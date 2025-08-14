@@ -39,6 +39,10 @@ class Processor(Protocol):
         """return state for the llm"""
         pass
 
+"""
+TODO
+- Params for setting up audio/video publish
+"""
 
 class Agent:
     def __init__(
@@ -94,7 +98,22 @@ class Agent:
         self.prepare_rtc()
         self.create_user()
 
+    async def say_text(self, text):
+        await self.tts.send(text)
 
+    async def play_audio(self, pcm):
+        self._audio_track.send_audio(pcm)
+
+    async def reply_to_text(self, input_text: str):
+        '''
+        Receive text (from a transcription, or user input)
+        Run it through the LLM, get a response. And reply
+        '''
+        response = await self.llm.generate(input_text)
+        await self.say_text(response)
+
+    async def reply_to_audio(self):
+        pass
 
     async def join(self, call) -> None:
         """Join a Stream video call."""
@@ -352,6 +371,7 @@ class Agent:
         try:
             # Generate response using LLM
             if self.llm:
+                # TODO: async version of this
                 response = await self._generate_response(text)
 
                 # Send response via TTS
@@ -369,9 +389,6 @@ class Agent:
 
     async def _generate_response(self, input_text: str) -> str:
         """Generate a response using the AI model."""
-        if not self.llm:
-            return ""
-
         try:
             response = await self.llm.generate(input_text)
             return response

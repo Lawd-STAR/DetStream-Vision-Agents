@@ -15,37 +15,7 @@ from getstream.plugins.openai.sts import OpenAIRealtime
 
 
 class OpenAIRealtimeModel:
-    """
-    OpenAI Realtime implementation for use with Stream Agents.
 
-    This class wraps the OpenAI Realtime STS service from stream-py
-    and provides a simple interface for use with the Agent class.
-
-    Example usage:
-        # Basic usage
-        sts_model = OpenAIRealtimeModel(
-            api_key="your-openai-api-key",
-            voice="alloy",
-            instructions="You are a helpful assistant."
-        )
-
-        agent = Agent(
-            sts_model=sts_model
-        )
-
-        # With tools
-        sts_model = OpenAIRealtimeModel(
-            api_key="your-openai-api-key",
-            voice="nova",
-            instructions="You are a helpful assistant with access to tools."
-        )
-
-        agent = Agent(
-            sts_model=sts_model
-        )
-
-        await agent.join(call)
-    """
 
     def __init__(
         self,
@@ -82,6 +52,9 @@ class OpenAIRealtimeModel:
         self.turn_detection = turn_detection
         self.input_audio_transcription = input_audio_transcription
         self.kwargs = kwargs
+        
+        # Mark this as an STS model
+        self.sts = True
 
         self.logger = logging.getLogger(f"OpenAIRealtimeModel[{model}]")
 

@@ -40,6 +40,7 @@ class OpenAILLM:
         base_url: Optional[str] = None,
         organization: Optional[str] = None,
         project: Optional[str] = None,
+        instructions: Optional[str] = None,
         # Default generation parameters
         default_temperature: Optional[float] = None,
         default_max_tokens: Optional[int] = None,
@@ -56,13 +57,18 @@ class OpenAILLM:
             base_url: Base URL for OpenAI API (if not using pre-configured client)
             organization: OpenAI organization ID (if not using pre-configured client)
             project: OpenAI project ID (if not using pre-configured client)
+            instructions: System instructions for the model
             default_temperature: Default temperature for generation
             default_max_tokens: Default max tokens for generation
             default_stop: Default stop sequences for generation
             **kwargs: Additional client configuration options
         """
         self._name = name
+        self.instructions = instructions or "You are a helpful AI assistant."
         self.logger = logging.getLogger(f"OpenAIModel[{name}]")
+        
+        # Mark this as a traditional LLM (not STS)
+        self.sts = False
 
         # Store default parameters
         self._default_temperature = default_temperature
@@ -96,6 +102,15 @@ class OpenAILLM:
             self._is_async = True
 
         self.logger.info(f"Initialized OpenAI model: {name}")
+
+    async def conversation_started(self, agent):
+        """Called when the conversation starts."""
+        try:
+            response = await self.generate("Say a brief greeting to welcome the user to the call.")
+            if hasattr(agent, 'tts') and agent.tts:
+                await agent.tts.send(response)
+        except Exception as e:
+            self.logger.error(f"Error in conversation_started: {e}")
 
     @property
     def name(self) -> str:
@@ -137,8 +152,11 @@ class OpenAILLM:
         Raises:
             Exception: If generation fails
         """
-        # Convert simple prompt to chat format
-        messages = [{"role": "user", "content": prompt}]
+        # Convert simple prompt to chat format with system instructions
+        messages = [
+            {"role": "system", "content": self.instructions},
+            {"role": "user", "content": prompt}
+        ]
         return await self.generate_chat(
             messages,
             max_tokens=max_tokens,

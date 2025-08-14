@@ -15,9 +15,11 @@ from pathlib import Path
 from uuid import uuid4
 from urllib.parse import urlencode
 
+import openai
 from getstream import Stream
 from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.video.rtc.utils import open_browser
+from openai.helpers import LocalAudioPlayer
 from stt import DeepgramSTT
 
 # Add parent directory to path so we can import our modules
@@ -48,9 +50,12 @@ async def main() -> None:
     client: Stream = Stream.from_env()
 
     # Create the simplest possible agent
-    agent_user = UserRequest(id=uuid4(), name="My happy AI friend")
+    agent_user = UserRequest(id=str(uuid4()), name="My happy AI friend")
     agent = Agent(
-        llm=OpenAILLM(name="gpt-5-2025-08-07"),
+        llm=OpenAILLM(
+            name="gpt-4o",
+            instructions="You're a voice AI assistant. Keep responses short and conversational. Don't use special characters or formatting. Be friendly and helpful."
+        ),
         tts=ElevenLabsTTS(),
         stt=DeepgramSTT(),
         agent_user=agent_user,

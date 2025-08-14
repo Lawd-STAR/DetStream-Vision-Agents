@@ -24,8 +24,9 @@ from stt import DeepgramSTT
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
-from getstream.models import UserRequest
+from getstream.models import UserRequest, User
 from getstream.stream import Stream
+from getstream.plugins.deepgram.stt import DeepgramSTT
 
 from utils import open_demo
 
@@ -47,11 +48,16 @@ async def main() -> None:
     client: Stream = Stream.from_env()
 
     # Create the simplest possible agent
+    agent_user = UserRequest(id=uuid4(), name="My happy AI friend")
     agent = Agent(
         llm=OpenAILLM(name="gpt-5-2025-08-07"),
         tts=ElevenLabsTTS(),
         stt=DeepgramSTT(),
+        agent_user=agent_user,
     )
+
+    client.upsert_users(UserRequest(id=agent_user.id, name=agent_user.name))
+
 
     try:
         # Join the call - this is the main functionality we're demonstrating

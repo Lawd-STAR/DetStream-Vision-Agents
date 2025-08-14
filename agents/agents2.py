@@ -47,6 +47,8 @@ class Processor(Protocol):
 class Agent:
     def __init__(
         self,
+
+
         # llm, optionally with sts capabilities
         llm: Optional[LLM] = None,
 
@@ -102,14 +104,7 @@ class Agent:
     async def join(
         self,
         call,
-        user_creation_callback: Optional[Callable] = None,
     ) -> None:
-        
-        # Create bot user if callback provided
-        if user_creation_callback:
-            agent_name = self.agent_user.custom.get("name", "AI Agent") if self.agent_user.custom else "AI Agent"
-            user_creation_callback(self.agent_user.id, agent_name)
-        
         # 1. join the call (see if we need video)
         subscription_config = SubscriptionConfig(
             default=TrackSubscriptionConfig(

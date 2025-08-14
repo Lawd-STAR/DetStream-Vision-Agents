@@ -52,9 +52,10 @@ async def main() -> None:
         model="gpt-4o-realtime-preview",
         voice="alloy",  # Options: alloy, echo, fable, onyx, nova, shimmer
         instructions=(
-            "You're a voice AI assistant. Keep responses short and conversational. "
-            "Don't use special characters or formatting. Be friendly and helpful. "
-            "Speak naturally and respond to interruptions appropriately."
+            "You are an English-speaking voice AI assistant. You MUST always respond in English only. "
+            "Keep responses short and conversational. Don't use special characters or formatting. "
+            "Be friendly and helpful. Speak naturally and respond to interruptions appropriately. "
+            "Never speak in any language other than English."
         ),
         turn_detection={
             "type": "server_vad",
@@ -63,6 +64,8 @@ async def main() -> None:
             "silence_duration_ms": 200,
         },
         input_audio_transcription={"model": "whisper-1", "language": "en"},
+        # Additional session parameters to ensure English output
+        output_audio_format="pcm16",
     )
 
     # Create agent with STS model (no separate STT/TTS needed)

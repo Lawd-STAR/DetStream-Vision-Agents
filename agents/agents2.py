@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 import traceback
 from contextlib import nullcontext
@@ -148,6 +149,7 @@ class Agent:
                 self.logger.info(f"🤖 Agent joined call: {call.id}")
 
 
+
                 # Set up audio track if available
                 if self._audio_track:
                     await connection.add_tracks(audio=self._audio_track)
@@ -266,15 +268,43 @@ class Agent:
         self.logger.info("Sending audio to STS from %s %s %s", self.sts_mode, self._sts_connection, hasattr(self._sts_connection, 'send_audio'))
         if self.sts_mode:
             # STS mode - send audio directly to STS connection
-            if self._sts_connection and hasattr(self._sts_connection, 'send_audio'):
+            if self._sts_connection and hasattr(self._sts_connection, 'connection'):
                 try:
                     self.logger.debug(f"🎵 Sending audio to STS from {user}")
-                    await self._sts_connection.send_audio(pcm_data)
+                    
+                    # Extract audio data from PcmData object
+                    self.logger.debug(f"PCM data type: {type(pcm_data)}")
+                    
+                    if hasattr(pcm_data, 'samples'):
+                        # PcmData NamedTuple - extract samples (numpy array)
+                        samples = pcm_data.samples
+                        if hasattr(samples, 'tobytes'):
+                            audio_bytes = samples.tobytes()
+                        else:
+                            # Convert numpy array to bytes
+                            audio_bytes = samples.astype('int16').tobytes()
+                    elif isinstance(pcm_data, bytes):
+                        # Already bytes
+                        audio_bytes = pcm_data
+                    else:
+                        self.logger.error(f"Unknown PCM data format: {type(pcm_data)}")
+                        return
+                    
+                    # Encode audio as base64 for OpenAI realtime API
+                    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+                    
+                    # Send as OpenAI realtime input_audio_buffer.append event
+                    audio_event = {
+                        "type": "input_audio_buffer.append",
+                        "audio": audio_b64
+                    }
+                    
+                    await self._sts_connection.connection.send(audio_event)
                 except Exception as e:
                     self.logger.error(f"Error sending audio to STS from user {user}: {e}")
                     self.logger.error(traceback.format_exc())
             else:
-                self.logger.debug("STS connection not available or doesn't support send_audio")
+                self.logger.debug("STS connection not available or doesn't support connection.send")
         else:
             # Traditional mode - use STT
             if not self.stt:

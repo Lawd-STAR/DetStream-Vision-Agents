@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import traceback
-from typing import Optional, Callable, List
+from typing import Optional, Callable, List, Protocol, Any
 from uuid import uuid4
 
 from getstream.models import User
@@ -13,7 +13,6 @@ from agents.agents import (
     TransformedVideoTrack,
     Tool,
     PreProcessor,
-    Model,
     TurnDetection,
     ImageProcessor,
     VideoTransformer,
@@ -46,37 +45,6 @@ class Processor(Protocol):
 
 
 class Agent:
-    """
-    AI Agent that can join Stream video calls and interact with participants.
-
-    Note that the agent can run in several different modes:
-    - STS Model (Speech-to-Speech with OpenAI Realtime API)
-    - STT -> Model -> TTS (Traditional pipeline)
-    - Video AI/coach
-    - Video transformation
-
-    With either a mix or match of those.
-
-    Example usage:
-        # Traditional STT -> Model -> TTS pipeline
-        agent = Agent(
-            instructions="Roast my in-game performance in a funny but encouraging manner",
-            pre_processors=[Roboflow(), dota_api("gameid")],
-            model=openai_model,
-            stt=speech_to_text,
-            tts=text_to_speech,
-            turn_detection=turn_detector
-        )
-
-        # OpenAI Realtime STS mode
-        agent = Agent(
-            instructions="You are a helpful assistant",
-            sts_model=openai_realtime_sts
-        )
-
-        await agent.join(call)
-    """
-
     def __init__(
         self,
         # llm, optionally with sts capabilities
@@ -87,27 +55,41 @@ class Agent:
         tts: Optional[TTS] = None,
         turn_detection: Optional[TurnDetection] = None,
 
-        # the agent's name
-        agent_user : Optional[User] = None,
+        # the agent's user info
+        agent_user: Optional[User] = None,
 
         # for video agents. gather data at an interval
         # - roboflow/ yolo typically run continuously
-        # - often combined with API calls to fetch stats etc.
-        # - context from each processor is passed to the LLM
+        # - often combined with API calls to fetch stats etc
+        # - state from each processor is passed to the LLM
         processors: Optional[List[PreProcessor]] = None,
 
         # transformers dont keep state/ aren't relevant for the LLM
         # just for applying sound or video effects
         video_transformer: Optional[VideoTransformer] = None,
     ):
+        # Create agent user if not provided
+        if agent_user is None:
+            agent_id = f"agent-{uuid4()}"
+            # Create a basic User object with required parameters
+            self.agent_user = User(
+                id=agent_id, 
+                banned=False, 
+                online=True, 
+                role="user",
+                custom={"name": "AI Agent"},
+                teams_role={}
+            )
+        else:
+            self.agent_user = agent_user
+
         self.logger = logging.getLogger(f"Agent[{self.agent_user.id}]")
 
         self.llm = llm
         self.stt = stt
         self.tts = tts
         self.turn_detection = turn_detection
-        self.agent_user = agent_user
-        self.processors = processors
+        self.processors = processors or []
         self.video_transformer = video_transformer
 
         # validation time
@@ -120,7 +102,13 @@ class Agent:
     async def join(
         self,
         call,
+        user_creation_callback: Optional[Callable] = None,
     ) -> None:
+        
+        # Create bot user if callback provided
+        if user_creation_callback:
+            agent_name = self.agent_user.custom.get("name", "AI Agent") if self.agent_user.custom else "AI Agent"
+            user_creation_callback(self.agent_user.id, agent_name)
         
         # 1. join the call (see if we need video)
         subscription_config = SubscriptionConfig(
@@ -153,7 +141,8 @@ class Agent:
                 processor.start()
 
             # Some callback to send the first message?
-            self.llm.conversation_started(self.pre_processors)
+            if self.llm and hasattr(self.llm, 'conversation_started'):
+                self.llm.conversation_started(self.processors)
 
 
             try:
@@ -193,4 +182,10 @@ class Agent:
 
 
     def create_user(self):
+        """Create user - placeholder for any user setup logic."""
         pass
+
+    def stop_interval(self):
+        """Stop any interval processing."""
+        if hasattr(self, '_interval_task') and self._interval_task:
+            self._interval_task.cancel()

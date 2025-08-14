@@ -98,7 +98,7 @@ await agent.join(call)
 
 ```python
 from agents import Agent
-from models import OpenAIModel
+from models import OpenAILLM
 
 # Create an AI model
 llm = OpenAILLM(

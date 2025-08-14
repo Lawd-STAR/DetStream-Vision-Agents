@@ -5,7 +5,7 @@ Tests for the models package.
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 
-from models import OpenAIModel
+from models import OpenAILLM
 
 
 class MockOpenAIResponse:
@@ -31,7 +31,7 @@ class TestOpenAIModel:
 
     def test_openai_model_initialization_with_name_only(self):
         """Test OpenAI model initialization with just a name."""
-        model = OpenAIModel(name="gpt-4o")
+        model = OpenAILLM(name="gpt-4o")
 
         assert model.name == "gpt-4o"
         assert model.is_async is True
@@ -40,7 +40,7 @@ class TestOpenAIModel:
     def test_openai_model_initialization_with_client(self):
         """Test OpenAI model initialization with pre-configured client."""
         mock_client = Mock()
-        model = OpenAIModel(name="gpt-3.5-turbo", client=mock_client)
+        model = OpenAILLM(name="gpt-3.5-turbo", client=mock_client)
 
         assert model.name == "gpt-3.5-turbo"
         assert model.client == mock_client
@@ -52,7 +52,7 @@ class TestOpenAIModel:
         mock_client = Mock()
         mock_async_openai.return_value = mock_client
 
-        model = OpenAIModel(
+        model = OpenAILLM(
             name="gpt-4o",
             api_key="test-key",
             base_url="https://api.openai.com/v1",
@@ -77,7 +77,7 @@ class TestOpenAIModel:
         mock_response = MockOpenAIResponse("Hello, world!")
         mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         messages = [{"role": "user", "content": "Hello"}]
         response = await model.generate_chat(messages)
@@ -94,7 +94,7 @@ class TestOpenAIModel:
         mock_response = MockOpenAIResponse("Parameterized response")
         mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         messages = [{"role": "user", "content": "Test"}]
         response = await model.generate_chat(
@@ -118,7 +118,7 @@ class TestOpenAIModel:
         mock_response = MockOpenAIResponse("Simple response")
         mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         response = await model.generate("What is AI?")
 
@@ -135,7 +135,7 @@ class TestOpenAIModel:
         mock_response.choices = []  # Empty choices
         mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         messages = [{"role": "user", "content": "Hello"}]
         response = await model.generate_chat(messages)
@@ -150,7 +150,7 @@ class TestOpenAIModel:
             side_effect=Exception("API Error")
         )
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         messages = [{"role": "user", "content": "Hello"}]
 
@@ -170,7 +170,7 @@ class TestOpenAIModel:
 
         mock_client.chat.completions.create = AsyncMock(return_value=mock_stream())
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         messages = [{"role": "user", "content": "Hello"}]
         chunks = []
@@ -195,7 +195,7 @@ class TestOpenAIModel:
 
         mock_client.chat.completions.create = AsyncMock(return_value=mock_stream())
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         chunks = []
         async for chunk in model.generate_stream("What is AI?"):
@@ -218,7 +218,7 @@ class TestOpenAIModel:
 
         mock_client.chat.completions.create = AsyncMock(return_value=mock_stream())
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         messages = [{"role": "user", "content": "Test"}]
         chunks = []
@@ -255,7 +255,7 @@ class TestOpenAIModel:
 
         mock_client.chat.completions.create = AsyncMock(return_value=mock_stream())
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         messages = [{"role": "user", "content": "Test"}]
         chunks = []
@@ -274,7 +274,7 @@ class TestOpenAIModel:
             side_effect=Exception("Streaming API Error")
         )
 
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         messages = [{"role": "user", "content": "Hello"}]
 
@@ -285,7 +285,7 @@ class TestOpenAIModel:
     def test_model_repr(self):
         """Test string representation of the model."""
         mock_client = Mock()
-        model = OpenAIModel(name="gpt-4o", client=mock_client)
+        model = OpenAILLM(name="gpt-4o", client=mock_client)
 
         repr_str = repr(model)
         assert "OpenAIModel" in repr_str
@@ -295,7 +295,7 @@ class TestOpenAIModel:
     def test_model_properties(self):
         """Test model properties."""
         mock_client = Mock()
-        model = OpenAIModel(name="gpt-3.5-turbo", client=mock_client)
+        model = OpenAILLM(name="gpt-3.5-turbo", client=mock_client)
 
         assert model.name == "gpt-3.5-turbo"
         assert model.client == mock_client

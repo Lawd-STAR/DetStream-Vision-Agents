@@ -27,7 +27,7 @@ from getstream.stream import Stream
 from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 
 from agents import Agent
-from models import OpenAIModel
+from models import OpenAILLM
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -131,7 +131,7 @@ async def main() -> None:
     tts = ElevenLabsTTS()  # API key picked from ELEVENLABS_API_KEY
 
     # Create OpenAI model
-    openai_model = OpenAIModel(
+    openai_model = OpenAILLM(
         name="gpt-4o-mini",  # Using mini for cost efficiency
         default_temperature=0.8,  # More creative responses
         default_max_tokens=150,  # Keep responses concise

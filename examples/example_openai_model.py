@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
 
-from models import OpenAIModel
+from models import OpenAILLM
 from agents import Agent
 
 
@@ -26,7 +26,7 @@ async def test_openai_model_standalone():
     print("=" * 50)
 
     # Create model with environment variables
-    model = OpenAIModel(name="gpt-4o-mini")  # Using mini for cost efficiency
+    model = OpenAILLM(name="gpt-4o-mini")  # Using mini for cost efficiency
 
     print(f"Model: {model}")
     print(f"Model name: {model.name}")
@@ -69,7 +69,7 @@ async def test_agent_with_openai_model():
     print("=" * 50)
 
     # Create OpenAI model
-    model = OpenAIModel(
+    model = OpenAILLM(
         name="gpt-4o-mini", default_temperature=0.7, default_max_tokens=100
     )
 

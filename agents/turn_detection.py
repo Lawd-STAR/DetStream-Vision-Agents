@@ -1,0 +1,112 @@
+from typing import Optional, Dict, Any, Union, Callable, Protocol
+from dataclasses import dataclass
+from enum import Enum
+from pyee import EventEmitter
+from getstream.models import User
+
+
+class TurnEvent(Enum):
+    """Events that can occur during turn detection."""
+    SPEECH_STARTED = "speech_started"
+    SPEECH_ENDED = "speech_ended"
+    TURN_STARTED = "turn_started"
+    TURN_ENDED = "turn_ended"
+    MINI_PAUSE_DETECTED = "mini_pause_detected"
+    MAX_PAUSE_REACHED = "max_pause_reached"
+
+
+@dataclass
+class TurnEventData:
+    """Data associated with a turn detection event."""
+    timestamp: float
+    speaker: Optional[User] = None
+    duration: Optional[float] = None
+    confidence: Optional[float] = None  # confidence level of speaker detection
+    audio_level: Optional[float] = None  # volume/energy level
+    custom: Optional[Dict[str, Any]] = None  # extensible custom data
+
+
+# Type alias for event listener callbacks
+EventListener = Callable[[TurnEventData], None]
+
+
+class TurnDetectionProtocol(Protocol):
+    """Protocol defining the interface for turn detection implementations."""
+
+    @property
+    def mini_pause_duration(self) -> float:
+        """Get the mini pause duration in seconds."""
+        ...
+
+    @property
+    def max_pause_duration(self) -> float:
+        """Get the max pause duration in seconds."""
+        ...
+
+    def is_detecting(self) -> bool:
+        """Check if turn detection is currently active."""
+        ...
+
+    def start_detection(self) -> None:
+        """Start the turn detection process."""
+        ...
+
+    def stop_detection(self) -> None:
+        """Stop the turn detection process."""
+        ...
+
+    def on(self, event: str, listener: Optional[EventListener] = None) -> Union[None, Callable]:
+        """Add an event listener or use as decorator (from EventEmitter)."""
+        ...
+
+    def emit(self, event: str, *args: Any) -> bool:
+        """Emit an event (from EventEmitter)."""
+        ...
+
+
+class BaseTurnDetector(EventEmitter):
+    """Base implementation for turn detection with common functionality."""
+
+    def __init__(self, mini_pause_duration: float, max_pause_duration: float) -> None:
+        super().__init__()  # Initialize EventEmitter
+        self._validate_durations(mini_pause_duration, max_pause_duration)
+        self._mini_pause_duration = mini_pause_duration
+        self._max_pause_duration = max_pause_duration
+        self._is_detecting = False
+
+    @staticmethod
+    def _validate_durations(mini_pause_duration: float, max_pause_duration: float) -> None:
+        """Validate the pause duration parameters."""
+        if mini_pause_duration <= 0:
+            raise ValueError("mini_pause_duration must be positive")
+        if max_pause_duration <= 0:
+            raise ValueError("max_pause_duration must be positive")
+        if mini_pause_duration >= max_pause_duration:
+            raise ValueError("mini_pause_duration must be less than max_pause_duration")
+
+    @property
+    def mini_pause_duration(self) -> float:
+        """Get the mini pause duration in seconds."""
+        return self._mini_pause_duration
+
+    @property
+    def max_pause_duration(self) -> float:
+        """Get the max pause duration in seconds."""
+        return self._max_pause_duration
+
+    def is_detecting(self) -> bool:
+        """Check if turn detection is currently active."""
+        return self._is_detecting
+
+    def _emit_turn_event(self, event_type: TurnEvent, event_data: TurnEventData) -> None:
+        """Emit a turn detection event."""
+        self.emit(event_type.value, event_data)
+
+    def start_detection(self) -> None:
+        """Start the turn detection process."""
+        self._is_detecting = True
+
+    def stop_detection(self) -> None:
+        """Stop the turn detection process."""
+        self._is_detecting = False
+

@@ -104,16 +104,18 @@ class Agent:
         
         if self.sts_mode:
             self.logger.info("🎤 Using STS (Speech-to-Speech) mode")
-            # Set up audio track for STS mode
-            self._audio_track = audio_track.AudioStreamTrack(framerate=16000)
         else:
             self.logger.info("🎤 Using traditional STT/TTS mode")
-            # Set up audio track if TTS is available
+
+        # TODO: some property around if we are producing audio or not
+        # TODO: isn't this already done in init???
+        if self.tts or self.sts_mode:
+            self._audio_track = audio_track.AudioStreamTrack(framerate=16000)
             if self.tts:
-                self._audio_track = audio_track.AudioStreamTrack(framerate=16000)
                 self.tts.set_output_track(self._audio_track)
 
         # Set up video track if video transformer is available
+        # TODO: some property around if we are producing video or not
         if self.video_transformer:
             self._video_track = TransformedVideoTrack()
             self.logger.info("🎥 Video track initialized for transformation publishing")
@@ -126,6 +128,7 @@ class Agent:
 
             # Traditional mode - use WebRTC connection
             # Configure subscription for audio and video
+            #TODO: load from nice config/functions
             subscription_config = SubscriptionConfig(
                 default=TrackSubscriptionConfig(
                     track_types=[
@@ -139,15 +142,11 @@ class Agent:
                 call, self.agent_user.id, subscription_config=subscription_config
             ) as connection, (stsContextManager or nullcontext()) as stsConnection:
                 self._connection = connection
-                if self.sts_mode:
-                    self._sts_connection = stsConnection
+                self._sts_connection = stsConnection
                 self._is_running = True
 
                 self.logger.info(f"🤖 Agent joined call: {call.id}")
 
-                # Set up STS audio forwarding if in STS mode
-                if self.sts_mode and self._sts_connection:
-                    await self._setup_sts_audio_forwarding(stsConnection, connection)
 
                 # Set up audio track if available
                 if self._audio_track:
@@ -158,6 +157,11 @@ class Agent:
                 if self._video_track:
                     await connection.add_tracks(video=self._video_track)
                     self.logger.info("🎥 Agent ready to publish transformed video")
+
+                # Set up STS audio forwarding if in STS mode
+                if self.sts_mode and self._sts_connection:
+                    self.logger.info("🎥 STS audio. Forward from openAI to Stream")
+                    await self._setup_sts_audio_forwarding(stsConnection, connection)
 
                 # Set up event handlers for audio processing
                 await self._setup_event_handlers()
@@ -259,6 +263,7 @@ class Agent:
 
     async def _handle_audio_input(self, pcm_data, user) -> None:
         """Handle incoming audio data from Stream WebRTC connection."""
+        self.logger.info("Sending audio to STS from %s %s %s", self.sts_mode, self._sts_connection, hasattr(self._sts_connection, 'send_audio'))
         if self.sts_mode:
             # STS mode - send audio directly to STS connection
             if self._sts_connection and hasattr(self._sts_connection, 'send_audio'):

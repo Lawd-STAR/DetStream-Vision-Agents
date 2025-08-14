@@ -26,7 +26,7 @@ class MockPreProcessor:
         return f"processed_{data}"
 
 
-class MockModel:
+class MockLLM:
     """Mock AI model for testing."""
 
     async def generate(self, prompt, **kwargs):
@@ -147,20 +147,18 @@ class TestAgent:
 
     def test_agent_initialization(self):
         """Test basic agent initialization."""
-        instructions = "Test instructions"
         tools = [MockTool()]
         pre_processors = [MockPreProcessor()]
-        model = MockModel()
+        llm = MockLLM()
         stt = MockSTT()
         tts = MockTTS()
         vad = MockVAD()
         turn_detection = MockTurnDetection()
 
         agent = Agent(
-            instructions=instructions,
             tools=tools,
             pre_processors=pre_processors,
-            model=model,
+            llm=llm,
             stt=stt,
             tts=tts,
             vad=vad,
@@ -168,10 +166,9 @@ class TestAgent:
             name="Test Agent",
         )
 
-        assert agent.instructions == instructions
         assert agent.tools == tools
         assert agent.pre_processors == pre_processors
-        assert agent.model == model
+        assert agent.llm == llm
         assert agent.stt == stt
         assert agent.tts == tts
         assert agent.vad == vad
@@ -182,12 +179,11 @@ class TestAgent:
 
     def test_agent_initialization_with_defaults(self):
         """Test agent initialization with default values."""
-        agent = Agent(instructions="Test instructions")
+        agent = Agent()
 
-        assert agent.instructions == "Test instructions"
         assert agent.tools == []
         assert agent.pre_processors == []
-        assert agent.model is None
+        assert agent.llm is None
         assert agent.stt is None
         assert agent.tts is None
         assert agent.vad is None
@@ -199,15 +195,15 @@ class TestAgent:
     def test_agent_custom_bot_id(self):
         """Test agent initialization with custom bot ID."""
         custom_id = "custom-bot-123"
-        agent = Agent(instructions="Test", bot_id=custom_id)
+        agent = Agent(bot_id=custom_id)
 
         assert agent.bot_id == custom_id
 
     @pytest.mark.asyncio
     async def test_generate_response(self):
         """Test response generation with model."""
-        model = MockModel()
-        agent = Agent(instructions="Test instructions", model=model)
+        llm = MockLLM()
+        agent = Agent(llm=llm)
 
         response = await agent._generate_response("test input")
 
@@ -215,9 +211,9 @@ class TestAgent:
         assert "test input" in response
 
     @pytest.mark.asyncio
-    async def test_generate_response_without_model(self):
-        """Test response generation without model."""
-        agent = Agent(instructions="Test instructions")
+    async def test_generate_response_without_llm(self):
+        """Test response generation without LLM."""
+        agent = Agent()
 
         response = await agent._generate_response("test input")
 
@@ -225,11 +221,11 @@ class TestAgent:
 
     @pytest.mark.asyncio
     async def test_generate_response_with_error(self):
-        """Test response generation when model raises error."""
-        model = Mock()
-        model.generate = AsyncMock(side_effect=Exception("Model error"))
+        """Test response generation when LLM raises error."""
+        llm = Mock()
+        llm.generate = AsyncMock(side_effect=Exception("LLM error"))
 
-        agent = Agent(instructions="Test instructions", model=model)
+        agent = Agent(llm=llm)
 
         response = await agent._generate_response("test input")
 
@@ -238,7 +234,7 @@ class TestAgent:
     @pytest.mark.asyncio
     async def test_handle_audio_input_without_stt(self):
         """Test audio input handling without STT."""
-        agent = Agent(instructions="Test instructions")
+        agent = Agent()
 
         # Mock user object
         mock_user = Mock()
@@ -254,9 +250,7 @@ class TestAgent:
         turn_detection = Mock()
         turn_detection.detect_turn.return_value = False
 
-        agent = Agent(
-            instructions="Test instructions", stt=stt, turn_detection=turn_detection
-        )
+        agent = Agent(stt=stt, turn_detection=turn_detection)
 
         # Mock PCM data and user
         mock_pcm = Mock()
@@ -274,16 +268,15 @@ class TestAgent:
         """Test full audio input processing pipeline."""
         tools = [MockTool("tool_result")]
         pre_processors = [MockPreProcessor()]
-        model = MockModel()
+        llm = MockLLM()
         stt = MockSTT()
         tts = MockTTS()
         turn_detection = MockTurnDetection()
 
         agent = Agent(
-            instructions="Test instructions",
             tools=tools,
             pre_processors=pre_processors,
-            model=model,
+            llm=llm,
             stt=stt,
             tts=tts,
             turn_detection=turn_detection,
@@ -315,7 +308,7 @@ class TestAgent:
         stt = MockEmptySTT()
         tts = MockTTS()
 
-        agent = Agent(instructions="Test instructions", stt=stt, tts=tts)
+        agent = Agent(stt=stt, tts=tts)
 
         # Mock user object
         mock_user = Mock()
@@ -331,13 +324,13 @@ class TestAgent:
 
     def test_is_running_initially_false(self):
         """Test that agent is not running initially."""
-        agent = Agent(instructions="Test instructions")
+        agent = Agent()
         assert not agent.is_running()
 
     @pytest.mark.asyncio
     async def test_join_requires_mock_call(self):
         """Test that join method would need mocking for full testing."""
-        agent = Agent(instructions="Test instructions")
+        agent = Agent()
 
         # We can't easily test the join method without mocking the entire
         # Stream SDK, but we can test that it raises an error when called
@@ -352,7 +345,6 @@ class TestAgent:
         pre_processor2.process = Mock(return_value="final_processed")
 
         agent = Agent(
-            instructions="Test instructions",
             pre_processors=[pre_processor1, pre_processor2],
         )
 
@@ -369,7 +361,7 @@ class TestAgent:
         tool1 = MockTool("result1")
         tool2 = MockTool("result2")
 
-        agent = Agent(instructions="Test instructions", tools=[tool1, tool2])
+        agent = Agent(tools=[tool1, tool2])
 
         # Test that tools can be called
         result1 = agent.tools[0]()
@@ -383,14 +375,13 @@ class TestAgent:
         """Test audio handling integration end-to-end."""
         stt = MockSTT()
         tts = MockTTS()
-        model = MockModel()
+        llm = MockLLM()
         turn_detection = MockTurnDetection()  # Always returns True for testing
 
         agent = Agent(
-            instructions="Test instructions",
             stt=stt,
             tts=tts,
-            model=model,
+            llm=llm,
             turn_detection=turn_detection,
         )
 
@@ -416,9 +407,9 @@ class TestAgent:
         """Test STT transcript event handler."""
         stt = MockSTT()
         tts = MockTTS()
-        model = MockModel()
+        llm = MockLLM()
 
-        agent = Agent(instructions="Test instructions", stt=stt, tts=tts, model=model)
+        agent = Agent(stt=stt, tts=tts, llm=llm)
 
         # Mock user object
         mock_user = Mock()
@@ -438,7 +429,7 @@ class TestAgent:
     @pytest.mark.asyncio
     async def test_stt_partial_transcript_event_handler(self):
         """Test STT partial transcript event handler."""
-        agent = Agent(instructions="Test instructions")
+        agent = Agent()
 
         # Mock user object
         mock_user = Mock()
@@ -451,7 +442,7 @@ class TestAgent:
     @pytest.mark.asyncio
     async def test_stt_error_event_handler(self):
         """Test STT error event handler."""
-        agent = Agent(instructions="Test instructions")
+        agent = Agent()
 
         # Should not raise error for STT error
         await agent._on_stt_error("Connection timeout")
@@ -461,9 +452,9 @@ class TestAgent:
         """Test audio processing without VAD (direct STT)."""
         stt = MockSTT()
         tts = MockTTS()
-        model = MockModel()
+        llm = MockLLM()
 
-        agent = Agent(instructions="Test instructions", stt=stt, tts=tts, model=model)
+        agent = Agent(stt=stt, tts=tts, llm=llm)
 
         # Mock user object
         mock_user = Mock()
@@ -485,11 +476,9 @@ class TestAgent:
         stt = MockSTT()
         vad = MockVAD()
         tts = MockTTS()
-        model = MockModel()
+        llm = MockLLM()
 
-        agent = Agent(
-            instructions="Test instructions", stt=stt, vad=vad, tts=tts, model=model
-        )
+        agent = Agent(stt=stt, vad=vad, tts=tts, llm=llm)
 
         # Mock user object
         mock_user = Mock()
@@ -508,7 +497,7 @@ class TestAgent:
     @pytest.mark.asyncio
     async def test_vad_speech_start_event(self):
         """Test VAD speech start event handler."""
-        agent = Agent(instructions="Test instructions")
+        agent = Agent()
 
         # Mock user object
         mock_user = Mock()
@@ -521,7 +510,7 @@ class TestAgent:
     @pytest.mark.asyncio
     async def test_vad_speech_end_event(self):
         """Test VAD speech end event handler."""
-        agent = Agent(instructions="Test instructions")
+        agent = Agent()
 
         # Mock user object
         mock_user = Mock()
@@ -535,7 +524,7 @@ class TestAgent:
     async def test_stt_event_handlers_setup_once(self):
         """Test that STT event handlers are set up only once."""
         stt = MockSTT()
-        agent = Agent(instructions="Test instructions", stt=stt)
+        agent = Agent(stt=stt)
 
         # Mock user object
         mock_user = Mock()
@@ -555,7 +544,7 @@ class TestAgent:
     async def test_vad_event_handlers_setup_once(self):
         """Test that VAD event handlers are set up only once."""
         vad = MockVAD()
-        agent = Agent(instructions="Test instructions", vad=vad)
+        agent = Agent(vad=vad)
 
         # Mock user object
         mock_user = Mock()
@@ -574,7 +563,7 @@ class TestAgent:
     async def test_user_identification_with_name(self):
         """Test user identification when user has name."""
         stt = MockSTT()
-        agent = Agent(instructions="Test instructions", stt=stt)
+        agent = Agent(stt=stt)
 
         # Mock user with name
         mock_user = Mock()
@@ -588,7 +577,7 @@ class TestAgent:
     async def test_user_identification_without_name(self):
         """Test user identification when user has no name."""
         stt = MockSTT()
-        agent = Agent(instructions="Test instructions", stt=stt)
+        agent = Agent(stt=stt)
 
         # Mock user without name
         mock_user = Mock()
@@ -602,7 +591,7 @@ class TestAgent:
     async def test_confidence_logging(self):
         """Test confidence score logging in transcript handler."""
         stt = MockSTT()
-        agent = Agent(instructions="Test instructions", stt=stt)
+        agent = Agent(stt=stt)
 
         # Mock user
         mock_user = Mock()
@@ -627,7 +616,7 @@ class TestAgent:
         stt.close = AsyncMock()
         vad.close = AsyncMock()
 
-        agent = Agent(instructions="Test instructions", stt=stt, vad=vad)
+        agent = Agent(stt=stt, vad=vad)
 
         # Call stop method
         await agent.stop()
@@ -646,7 +635,7 @@ class TestAgent:
         stt.close = AsyncMock(side_effect=Exception("STT close error"))
         vad.close = AsyncMock(side_effect=Exception("VAD close error"))
 
-        agent = Agent(instructions="Test instructions", stt=stt, vad=vad)
+        agent = Agent(stt=stt, vad=vad)
 
         # Should not raise error despite close failures
         await agent.stop()
@@ -655,7 +644,7 @@ class TestAgent:
     async def test_tts_audio_event_handling(self):
         """Test TTS audio event handling with proper user handling."""
         tts = MockTTS()
-        agent = Agent(instructions="Test instructions", tts=tts)
+        agent = Agent(tts=tts)
 
         # Set up agent with mock connection
         agent._connection = Mock()
@@ -676,7 +665,7 @@ class TestAgent:
     async def test_tts_audio_event_with_none_user(self):
         """Test TTS audio event handling with None user."""
         tts = MockTTS()
-        agent = Agent(instructions="Test instructions", tts=tts)
+        agent = Agent(tts=tts)
 
         # Set up agent with mock connection
         agent._connection = Mock()
@@ -692,7 +681,7 @@ class TestAgent:
     async def test_tts_error_event_handling(self):
         """Test TTS error event handling with proper user handling."""
         tts = MockTTS()
-        agent = Agent(instructions="Test instructions", tts=tts)
+        agent = Agent(tts=tts)
 
         # Mock user object
         mock_user = Mock()
@@ -709,7 +698,7 @@ class TestAgent:
     async def test_tts_error_event_with_none_user(self):
         """Test TTS error event handling with None user."""
         tts = MockTTS()
-        agent = Agent(instructions="Test instructions", tts=tts)
+        agent = Agent(tts=tts)
 
         # Test error event handling with None user
         error = Exception("Test TTS error")
@@ -721,7 +710,7 @@ class TestAgent:
     async def test_tts_error_event_with_user_without_name(self):
         """Test TTS error event handling with user that has no name attribute."""
         tts = MockTTS()
-        agent = Agent(instructions="Test instructions", tts=tts)
+        agent = Agent(tts=tts)
 
         # Mock user object without name
         mock_user = Mock()
@@ -738,7 +727,7 @@ class TestAgent:
     async def test_tts_event_registration_on_join(self):
         """Test that TTS event handlers are properly registered when agent joins."""
         tts = MockTTS()
-        agent = Agent(instructions="Test instructions", tts=tts)
+        agent = Agent(tts=tts)
 
         # Mock connection and setup
         mock_connection = Mock()

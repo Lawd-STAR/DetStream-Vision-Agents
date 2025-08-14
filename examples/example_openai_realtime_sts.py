@@ -169,10 +169,6 @@ async def main():
 
     # Create Agent with STS model
     agent = Agent(
-        instructions=(
-            "You are a friendly AI assistant in a video call using OpenAI's real-time voice API. "
-            "Engage naturally with participants and help them with their requests."
-        ),
         sts_model=sts_model,
         name="OpenAI Realtime Assistant",
     )

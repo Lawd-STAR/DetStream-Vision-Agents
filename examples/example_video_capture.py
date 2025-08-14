@@ -189,7 +189,6 @@ async def main(interval: int = 5, output_dir: str = "captured_frames"):
     image_processors = [frame_capture]
 
     agent = Agent(
-        instructions="I am a video capture bot that processes video frames from participants.",
         image_interval=interval,  # Use the provided interval
         image_processors=image_processors,  # Use the frame capture processor
         target_user_id=None,  # Capture from any user

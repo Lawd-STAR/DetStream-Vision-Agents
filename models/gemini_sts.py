@@ -32,7 +32,6 @@ class GeminiSTS:
         )
 
         agent = Agent(
-            instructions="Coach the player",
             sts_model=sts_model
         )
 

@@ -45,10 +45,9 @@ python examples/example_openai_model.py
   ```python
   model = OpenAIModel(name="gpt-4o-mini", default_temperature=0.8)
   agent = Agent(
-      instructions="Roast my in-game performance...",
       tools=[dota_api("gameid")],
       pre_processors=[Roboflow()],
-      model=model,
+      llm=model,
       tts=tts
   )
   await agent.join(call)

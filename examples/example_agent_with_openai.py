@@ -141,11 +141,9 @@ async def main() -> None:
 
     # Create agent with OpenAI model and the requested syntax
     agent = Agent(
-        instructions="Roast my in-game performance in a funny but encouraging manner. "
-        "Be witty and humorous while staying supportive. Keep responses brief and engaging.",
         tools=[dota_api("game123")],
         pre_processors=[Roboflow()],
-        model=openai_model,
+        llm=openai_model,
         # stt=None,    # Would be set to your STT service
         tts=tts,
         # turn_detection=None,  # Would be set to your turn detection service

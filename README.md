@@ -29,6 +29,34 @@ uv add openai python-dotenv getstreamt
 pip install openai python-dotenv getstream
 ```
 
+## ⚡ Quick Start - Cluely style AI
+
+```python
+from agents import Agent
+
+# Roboflow for object detection (finetuned)
+# load docs from @ai-dota-coaching.md
+# use speech to speech (STS) gemini model
+agent = Agent(
+    pre_processors=[Roboflow(), dota_api("gameid")],
+    interval=1 second,
+    llm=GeminiSTS(), 
+    # turn_detection=your_turn_detector
+)
+
+# Join a Stream video call
+await agent.join(call)
+
+# gemini is available at
+agent.llm.client
+
+# history at
+agent.conversation
+```
+
+
+
+
 ## ⚡ Quick Start - Video AI Coach
 
 ```python
@@ -40,7 +68,7 @@ from agents import Agent
 agent = Agent(
     pre_processors=[Roboflow(), dota_api("gameid")],
     interval=1 second,
-    sts=GeminiSTS(), 
+    llm=GeminiSTS(), 
     # turn_detection=your_turn_detector
 )
 

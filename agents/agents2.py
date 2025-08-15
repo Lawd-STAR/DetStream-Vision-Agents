@@ -41,7 +41,12 @@ class Processor(Protocol):
 
 """
 TODO
-- Params for setting up audio/video publish
+- Cleanup audio connect
+- Cleanup STS protocol (try gemini)
+- 1 second image integration
+- Yolo integration
+- Text replies
+
 """
 
 class Agent:
@@ -135,19 +140,6 @@ class Agent:
         else:
             self.logger.info("🎤 Using traditional STT/TTS mode")
 
-        # TODO: some property around if we are producing audio or not
-        # TODO: isn't this already done in init???
-        if self.tts or self.sts_mode:
-            self._audio_track = audio_track.AudioStreamTrack(framerate=16000)
-            if self.tts:
-                self.tts.set_output_track(self._audio_track)
-
-        # Set up video track if video transformer is available
-        # TODO: some property around if we are producing video or not
-        if self.video_transformer:
-            self._video_track = TransformedVideoTrack()
-            self.logger.info("🎥 Video track initialized for transformation publishing")
-
         try:
             stsContextManager = None
             if self.sts_mode:
@@ -156,7 +148,6 @@ class Agent:
 
             # Traditional mode - use WebRTC connection
             # Configure subscription for audio and video
-            #TODO: load from nice config/functions
             subscription_config = SubscriptionConfig(
                 default=self.get_subscription_config()
             )
@@ -175,12 +166,12 @@ class Agent:
                 # Set up audio track if available
                 if self.publish_audio:
                     await connection.add_tracks(audio=self._audio_track)
-                    self.logger.info("🤖 Agent ready to speak")
+                    self.logger.debug("🤖 Agent ready to speak")
 
                 # Set up video track if available
                 if self.publish_video:
                     await connection.add_tracks(video=self._video_track)
-                    self.logger.info("🎥 Agent ready to publish video")
+                    self.logger.debug("🎥 Agent ready to publish video")
 
                 # Set up STS audio forwarding if in STS mode
                 if self.sts_mode and self._sts_connection:
@@ -201,6 +192,8 @@ class Agent:
                         async def process_sts_events():
                             try:
                                 async for event in stsConnection:
+                                    # also see https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/speech_stopped
+                                    # TODO: implement https://github.com/openai/openai-python/blob/main/examples/realtime/push_to_talk_app.py#L167
                                     self.logger.debug(f"🔔 STS Event: {event.type}")
                                     # Handle any STS-specific events here if needed
                             except Exception as e:

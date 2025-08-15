@@ -269,12 +269,22 @@ class Agent:
                 self.logger.error(f"Error handling audio received event: {e}")
                 self.logger.error(traceback.format_exc())
 
+        # Set up video track handler for processors that want video
+        if self.processors and any(hasattr(p, 'receive_video') and p.receive_video for p in self.processors):
+            def on_track_added(track_id, track_type, user):
+                user_id = user.user_id if user else "unknown"
+                self.logger.info(f"🎬 New track detected: {track_id} ({track_type}) from {user_id}")
+                if track_type == "video" and user_id != self.agent_user.id:
+                    asyncio.create_task(self._process_video_track(track_id, track_type, user))
+
+            self._connection.on("track_added", on_track_added)
+
     async def _handle_audio_input(self, pcm_data, user) -> None:
         """Handle incoming audio data from Stream WebRTC connection."""
-        self.logger.info("Sending audio to STS from %s %s %s", self.sts_mode, self._sts_connection, hasattr(self._sts_connection, 'send_audio'))
+        self.logger.debug("Sending audio to STS from %s %s %s", self.sts_mode, self._sts_connection, hasattr(self._sts_connection, 'send_audio'))
         if self.sts_mode:
             # STS mode - send audio directly to STS connection
-            if self._sts_connection and hasattr(self._sts_connection, 'connection'):
+            if self._sts_connection:
                 try:
                     self.logger.debug(f"🎵 Sending audio to STS from {user}")
                     
@@ -296,21 +306,26 @@ class Agent:
                         self.logger.error(f"Unknown PCM data format: {type(pcm_data)}")
                         return
                     
-                    # Encode audio as base64 for OpenAI realtime API
-                    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-                    
-                    # Send as OpenAI realtime input_audio_buffer.append event
-                    audio_event = {
-                        "type": "input_audio_buffer.append",
-                        "audio": audio_b64
-                    }
-                    
-                    await self._sts_connection.connection.send(audio_event)
+                    # Check if this is a Gemini Live connection or OpenAI connection
+                    if hasattr(self._sts_connection, 'send_audio'):
+                        # Gemini Live - send raw audio bytes
+                        await self._sts_connection.send_audio(audio_bytes)
+                    elif hasattr(self._sts_connection, 'connection'):
+                        # OpenAI - send base64 encoded audio event
+                        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+                        audio_event = {
+                            "type": "input_audio_buffer.append",
+                            "audio": audio_b64
+                        }
+                        await self._sts_connection.connection.send(audio_event)
+                    else:
+                        self.logger.warning("STS connection doesn't support audio sending")
+                        
                 except Exception as e:
                     self.logger.error(f"Error sending audio to STS from user {user}: {e}")
                     self.logger.error(traceback.format_exc())
             else:
-                self.logger.debug("STS connection not available or doesn't support connection.send")
+                self.logger.debug("STS connection not available")
         else:
             # Traditional mode - use STT
             if not self.stt:
@@ -333,6 +348,161 @@ class Agent:
             except Exception as e:
                 self.logger.error(f"Error handling audio input from user {user}: {e}")
                 self.logger.error(traceback.format_exc())
+
+        # Forward audio to processors that want to receive audio
+        await self._forward_audio_to_processors(pcm_data, user)
+
+
+
+    async def _forward_audio_to_processors(self, pcm_data, user) -> None:
+        """Forward audio data to processors that want to receive audio."""
+        if not self.processors:
+            return
+
+        try:
+            # Extract audio bytes from PCM data
+            audio_bytes = None
+            if hasattr(pcm_data, 'samples'):
+                # PcmData NamedTuple - extract samples (numpy array)
+                samples = pcm_data.samples
+                if hasattr(samples, 'tobytes'):
+                    audio_bytes = samples.tobytes()
+                else:
+                    # Convert numpy array to bytes
+                    audio_bytes = samples.astype('int16').tobytes()
+            elif isinstance(pcm_data, bytes):
+                # Already bytes
+                audio_bytes = pcm_data
+            else:
+                self.logger.error(f"Unknown PCM data format: {type(pcm_data)}")
+                return
+
+            # Forward to processors that want audio
+            for processor in self.processors:
+                if hasattr(processor, 'receive_audio') and processor.receive_audio:
+                    try:
+                        user_id = user if isinstance(user, str) else getattr(user, 'user_id', str(user))
+                        await processor.process_audio(audio_bytes, user_id)
+                    except Exception as e:
+                        self.logger.error(f"Error forwarding audio to processor {type(processor).__name__}: {e}")
+
+        except Exception as e:
+            self.logger.error(f"Error in audio forwarding: {e}")
+            self.logger.error(traceback.format_exc())
+
+    async def _forward_video_to_processors(self, frame, user) -> None:
+        """Forward video frame to processors that want to receive video."""
+        if not self.processors:
+            return
+
+        try:
+            from PIL import Image
+            import numpy as np
+            
+            self.logger.debug(f"🎥 Processing video frame of type: {type(frame)}")
+            
+            pil_image = None
+            
+            # Try to convert different frame formats to PIL Image
+            if isinstance(frame, Image.Image):
+                # Already a PIL Image
+                pil_image = frame
+            elif hasattr(frame, 'to_ndarray'):
+                # VideoFrame from aiortc - convert to numpy array then PIL
+                try:
+                    array = frame.to_ndarray(format='rgb24')
+                    pil_image = Image.fromarray(array)
+                    self.logger.debug(f"✅ Converted VideoFrame to PIL Image: {pil_image.size}")
+                except Exception as e:
+                    self.logger.error(f"Error converting VideoFrame to PIL: {e}")
+                    return
+            elif hasattr(frame, 'to_image'):
+                # Some other video frame format
+                try:
+                    pil_image = frame.to_image()
+                    self.logger.debug(f"✅ Converted frame to PIL Image using to_image(): {pil_image.size}")
+                except Exception as e:
+                    self.logger.error(f"Error converting frame using to_image(): {e}")
+                    return
+            elif isinstance(frame, np.ndarray):
+                # Numpy array - convert to PIL
+                try:
+                    pil_image = Image.fromarray(frame)
+                    self.logger.debug(f"✅ Converted numpy array to PIL Image: {pil_image.size}")
+                except Exception as e:
+                    self.logger.error(f"Error converting numpy array to PIL: {e}")
+                    return
+            else:
+                self.logger.warning(f"⚠️ Unknown video frame format: {type(frame)}. Available methods: {[method for method in dir(frame) if not method.startswith('_')]}")
+                return
+
+            if pil_image:
+                # Forward to processors that want video
+                video_processors = [p for p in self.processors if hasattr(p, 'receive_video') and p.receive_video]
+                self.logger.debug(f"📤 Forwarding video frame to {len(video_processors)} processors")
+                
+                for processor in video_processors:
+                    try:
+                        user_id = user if isinstance(user, str) else getattr(user, 'user_id', str(user))
+                        await processor.process_image(pil_image, user_id)
+                    except Exception as e:
+                        self.logger.error(f"Error forwarding video to processor {type(processor).__name__}: {e}")
+                        self.logger.error(traceback.format_exc())
+
+        except Exception as e:
+            self.logger.error(f"Error in video forwarding: {e}")
+            self.logger.error(traceback.format_exc())
+
+    async def _process_video_track(self, track_id: str, track_type: str, user):
+        """Process video frames from a specific track."""
+        self.logger.info(
+            f"🎥 Processing video track: {track_id} from user {user.user_id} (type: {track_type})"
+        )
+
+        # Only process video tracks
+        if track_type != "video":
+            self.logger.debug(f"Ignoring non-video track: {track_type}")
+            return
+
+        # Subscribe to the video track
+        track = self._connection.subscriber_pc.add_track_subscriber(track_id)
+        if not track:
+            self.logger.error(f"❌ Failed to subscribe to track: {track_id}")
+            return
+
+        self.logger.info(
+            f"✅ Successfully subscribed to video track from {user.user_id}"
+        )
+
+        try:
+            while True:
+                try:
+                    # Receive video frame
+                    video_frame = await track.recv()
+                    if not video_frame:
+                        continue
+
+                    # Convert to PIL Image
+                    img = video_frame.to_image()
+                    self.logger.debug(f"📸 Converted video frame to PIL Image: {img.size}")
+
+                    # Forward to processors that want video
+                    await self._forward_video_to_processors(img, user)
+
+                except Exception as e:
+                    if "Connection closed" in str(e) or "Track ended" in str(e):
+                        self.logger.info(
+                            f"🔌 Video track ended for user {user.user_id}"
+                        )
+                        break
+                    else:
+                        self.logger.error(f"❌ Error processing video frame: {e}")
+                        self.logger.error(traceback.format_exc())
+                        await asyncio.sleep(1)  # Brief pause before retry
+
+        except Exception as e:
+            self.logger.error(f"❌ Fatal error in video processing: {e}")
+            self.logger.error(traceback.format_exc())
 
     async def _on_partial_transcript(self, text: str, user=None, metadata=None):
         """Handle partial transcript from STT service."""
@@ -451,21 +621,33 @@ class Agent:
         self.logger.info("🔗 Setting up STS audio forwarding")
         
         # Set up audio forwarding from STS to WebRTC
-        if hasattr(sts_connection, 'on_audio') and self._audio_track:
-            @sts_connection.on_audio
+        if self._audio_track:
             async def forward_sts_audio(audio_data):
                 """Forward audio from STS connection to WebRTC connection."""
                 try:
-                    self.logger.debug("🎵 Forwarding STS audio to WebRTC")
+                    self.logger.info(f"🎵 Forwarding {len(audio_data)} bytes of STS audio to WebRTC")
                     # Send audio data to the audio track
                     await self._audio_track.send_audio(audio_data)
+                    self.logger.debug("✅ Audio forwarded successfully")
                 except Exception as e:
                     self.logger.error(f"Error forwarding STS audio: {e}")
                     self.logger.error(traceback.format_exc())
             
-            self.logger.info("✅ STS audio forwarding configured")
+            # Check which type of STS connection we have
+            if hasattr(sts_connection, 'on_audio') and callable(getattr(sts_connection, 'on_audio')):
+                # Gemini Live-style connection - register audio callback
+                sts_connection.on_audio(forward_sts_audio)
+                self.logger.info("✅ Gemini Live audio forwarding configured")
+            elif hasattr(sts_connection, 'on_audio'):
+                # OpenAI-style connection with on_audio decorator
+                @sts_connection.on_audio
+                async def forward_openai_audio(audio_data):
+                    await forward_sts_audio(audio_data)
+                self.logger.info("✅ OpenAI audio forwarding configured")
+            else:
+                self.logger.warning("⚠️ STS connection doesn't support audio forwarding")
         else:
-            self.logger.warning("⚠️ STS connection doesn't support audio forwarding or audio track not available")
+            self.logger.warning("⚠️ Audio track not available for forwarding")
 
     async def close(self):
         """Clean up all connections and resources."""

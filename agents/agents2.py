@@ -134,6 +134,14 @@ class Agent:
             ]
         )
 
+    def get_subscription_config(self):
+        return TrackSubscriptionConfig(
+            track_types=[
+                TrackType.TRACK_TYPE_VIDEO,
+                TrackType.TRACK_TYPE_AUDIO,
+            ]
+        )
+
     async def join(self, call) -> None:
         """Join a Stream video call."""
         if self._is_running:
@@ -177,7 +185,9 @@ class Agent:
                 # Set up video track if available
                 if self.publish_video:
                     await connection.add_tracks(video=self._video_track)
+
                     self.logger.debug("🎥 Agent ready to publish video")
+
 
                 # Set up STS audio forwarding if in STS mode
                 if self.sts_mode and self._sts_connection:
@@ -602,6 +612,36 @@ class Agent:
         except Exception as e:
             self.logger.debug(f"Error canceling interval task: {e}")
         finally:
+            self._interval_task = None
+
+    async def close(self):
+        """Clean up all connections and resources."""
+        self._is_running = False
+        
+        if self._sts_connection:
+            await self._sts_connection.__aexit__(None, None, None)
+            self._sts_connection = None
+        
+        if self._connection:
+            await self._connection.__aexit__(None, None, None)
+            self._connection = None
+        
+        if self.stt:
+            await self.stt.close()
+        
+        if self.tts:
+            await self.tts.close()
+        
+        if self._audio_track:
+            self._audio_track.stop()
+            self._audio_track = None
+        
+        if self._video_track:
+            self._video_track.stop()
+            self._video_track = None
+        
+        if self._interval_task:
+            self._interval_task.cancel()
             self._interval_task = None
 
     def create_user(self):

@@ -41,9 +41,7 @@ class Processor(Protocol):
 
 """
 TODO
-- Cleanup audio connect
-- Cleanup STS protocol (try gemini)
-- 1 second image integration
+- Cleanup Agent class
 - Yolo integration
 - Text replies
 
@@ -101,7 +99,15 @@ class Agent:
         # validation time
         self.validate_configuration()
         self.prepare_rtc()
+        self.setup_stt()
         self.create_user()
+
+    def setup_stt(self):
+        self.logger.info("🎙️ Setting up STT event listeners")
+        self.stt.on("transcript", self._on_transcript)
+        self.stt.on("partial_transcript", self._on_partial_transcript)
+        self.stt.on("error", self._on_stt_error)
+        self._stt_setup = True
 
     async def say_text(self, text):
         await self.tts.send(text)
@@ -116,9 +122,6 @@ class Agent:
         '''
         response = await self.llm.generate(input_text)
         await self.say_text(response)
-
-    async def reply_to_audio(self):
-        pass
 
     def get_subscription_config(self):
         return TrackSubscriptionConfig(
@@ -179,44 +182,28 @@ class Agent:
                     await self._setup_sts_audio_forwarding(stsConnection, connection)
 
                 # Set up event handlers for audio processing
-                await self._setup_event_handlers()
+                await self.listen_to_audio_and_video()
 
                 # Send initial greeting, if the LLM is configured to do so
-                if self.llm and hasattr(self.llm, 'conversation_started'):
+                if self.llm:
                     await self.llm.conversation_started(self)
 
-                try:
-                    self.logger.info("🎧 Agent is active - press Ctrl+C to stop")
-                    if self.sts_mode:
-                        # Process STS events in the background
-                        async def process_sts_events():
-                            try:
-                                async for event in stsConnection:
-                                    # also see https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/speech_stopped
-                                    # TODO: implement https://github.com/openai/openai-python/blob/main/examples/realtime/push_to_talk_app.py#L167
-                                    self.logger.debug(f"🔔 STS Event: {event.type}")
-                                    # Handle any STS-specific events here if needed
-                            except Exception as e:
-                                self.logger.error(f"❌ Error processing STS events: {e}")
-                                self.logger.error(traceback.format_exc())
-                        
-                        # Start STS event processing in background
-                        sts_task = asyncio.create_task(process_sts_events())
-                        
+                if self.sts_mode:
+                    async def process_sts_events():
                         try:
-                            await connection.wait()
-                        finally:
-                            sts_task.cancel()
-                            try:
-                                await sts_task
-                            except asyncio.CancelledError:
-                                pass
-                    else:
-                        await connection.wait()
-                except Exception as e:
-                    self.logger.error(f"❌ Error during agent operation: {e}")
-                    self.logger.error(traceback.format_exc())
-                    
+                            #TODO: some method to receive audio
+                            async for event in stsConnection:
+                                # also see https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/speech_stopped
+                                # TODO: implement https://github.com/openai/openai-python/blob/main/examples/realtime/push_to_talk_app.py#L167
+                                self.logger.debug(f"🔔 STS Event: {event.type}")
+                                # Handle any STS-specific events here if needed
+                        except Exception as e:
+                            self.logger.error(f"❌ Error processing STS events: {e}")
+                            self.logger.error(traceback.format_exc())
+
+                    # Start STS event processing in background
+                    sts_task = asyncio.create_task(process_sts_events())
+
         except Exception as e:
             self.logger.error(f"❌ Error during agent operation: {e}")
             self.logger.error(traceback.format_exc())
@@ -225,7 +212,7 @@ class Agent:
             # Use the comprehensive cleanup method
             await self.close()
 
-    async def _setup_event_handlers(self) -> None:
+    async def listen_to_audio_and_video(self) -> None:
         """Set up event handlers for the connection."""
         if not self._connection:
             self.logger.error("❌ No active connections found")
@@ -245,7 +232,7 @@ class Agent:
 
                 if user_id and user_id != self.agent_user.id:
                     self.logger.info(f"👋 New participant joined: {user_id}")
-                    
+
             except Exception as e:
                 self.logger.error(f"❌ Error handling track published event: {e}")
                 self.logger.error(traceback.format_exc())
@@ -260,98 +247,25 @@ class Agent:
         # Handle audio data for STT or STS
         @self._connection.on("audio")
         async def on_audio_received(pcm, user):
-            """Handle incoming audio data from participants."""
-            try:
-                if user and user != self.agent_user.id:
-                    self.logger.debug(f"🎤 Received audio from {user}")
-                    await self._handle_audio_input(pcm, user)
-            except Exception as e:
-                self.logger.error(f"Error handling audio received event: {e}")
-                self.logger.error(traceback.format_exc())
+            await self.reply_to_audio(pcm, user)
 
-        # Set up video track handler for processors that want video
-        if self.processors and any(hasattr(p, 'receive_video') and p.receive_video for p in self.processors):
-            def on_track_added(track_id, track_type, user):
-                user_id = user.user_id if user else "unknown"
-                self.logger.info(f"🎬 New track detected: {track_id} ({track_type}) from {user_id}")
-                if track_type == "video" and user_id != self.agent_user.id:
-                    asyncio.create_task(self._process_video_track(track_id, track_type, user))
+        # listen to video tracks
+        @self._connection.on("track_added")
+        async def on_track(track_id, track_type, user):
+            asyncio.create_task(
+                self._process_video_track(track_id, track_type, user)
+            )
 
-            self._connection.on("track_added", on_track_added)
-
-    async def _handle_audio_input(self, pcm_data, user) -> None:
-        """Handle incoming audio data from Stream WebRTC connection."""
-        self.logger.debug("Sending audio to STS from %s %s %s", self.sts_mode, self._sts_connection, hasattr(self._sts_connection, 'send_audio'))
-        if self.sts_mode:
-            # STS mode - send audio directly to STS connection
-            if self._sts_connection:
-                try:
-                    self.logger.debug(f"🎵 Sending audio to STS from {user}")
-                    
-                    # Extract audio data from PcmData object
-                    self.logger.debug(f"PCM data type: {type(pcm_data)}")
-                    
-                    if hasattr(pcm_data, 'samples'):
-                        # PcmData NamedTuple - extract samples (numpy array)
-                        samples = pcm_data.samples
-                        if hasattr(samples, 'tobytes'):
-                            audio_bytes = samples.tobytes()
-                        else:
-                            # Convert numpy array to bytes
-                            audio_bytes = samples.astype('int16').tobytes()
-                    elif isinstance(pcm_data, bytes):
-                        # Already bytes
-                        audio_bytes = pcm_data
-                    else:
-                        self.logger.error(f"Unknown PCM data format: {type(pcm_data)}")
-                        return
-                    
-                    # Check if this is a Gemini Live connection or OpenAI connection
-                    if hasattr(self._sts_connection, 'send_audio'):
-                        # Gemini Live - send raw audio bytes
-                        await self._sts_connection.send_audio(audio_bytes)
-                    elif hasattr(self._sts_connection, 'connection'):
-                        # OpenAI - send base64 encoded audio event
-                        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-                        audio_event = {
-                            "type": "input_audio_buffer.append",
-                            "audio": audio_b64
-                        }
-                        await self._sts_connection.connection.send(audio_event)
-                    else:
-                        self.logger.warning("STS connection doesn't support audio sending")
-                        
-                except Exception as e:
-                    self.logger.error(f"Error sending audio to STS from user {user}: {e}")
-                    self.logger.error(traceback.format_exc())
-            else:
-                self.logger.debug("STS connection not available")
-        else:
-            # Traditional mode - use STT
-            if not self.stt:
-                self.logger.warning("No STT service available")
-                return
-
-            try:
-                # Set up event listeners for transcription results (one-time setup)
-                if not hasattr(self, "_stt_setup"):
-                    self.logger.info("🎙️ Setting up STT event listeners")
-                    self.stt.on("transcript", self._on_transcript)
-                    self.stt.on("partial_transcript", self._on_partial_transcript)
-                    self.stt.on("error", self._on_stt_error)
-                    self._stt_setup = True
-
-                # Process audio through STT
-                self.logger.debug(f"🎵 Processing audio from {user}")
-                await self.stt.process_audio(pcm_data, user)
-
-            except Exception as e:
-                self.logger.error(f"Error handling audio input from user {user}: {e}")
-                self.logger.error(traceback.format_exc())
-
-        # Forward audio to processors that want to receive audio
+    async def reply_to_audio(self, pcm_data, user) -> None:
+        # first forward to processors
         await self._forward_audio_to_processors(pcm_data, user)
-
+        # when in STS mode call the STS directly
+        if self.sts_mode:
+            self.llm.send_audio(pcm_data, user)
+        else:
+            # Process audio through STT
+            self.logger.debug(f"🎵 Processing audio from {user}")
+            await self.stt.process_audio(pcm_data, user)
 
 
     async def _forward_audio_to_processors(self, pcm_data, user) -> None:
@@ -574,8 +488,6 @@ class Agent:
             return True
         else:
             return False
-        
-    
 
     def validate_configuration(self):
         """Validate the agent configuration."""

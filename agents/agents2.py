@@ -184,10 +184,7 @@ class Agent:
                 # Set up event handlers for audio processing
                 await self.listen_to_audio_and_video()
 
-                # Send initial greeting, if the LLM is configured to do so
-                if self.llm:
-                    await self.llm.conversation_started(self)
-
+                # listen to what the realtime model says
                 if self.sts_mode:
                     async def process_sts_events():
                         try:
@@ -203,6 +200,10 @@ class Agent:
 
                     # Start STS event processing in background
                     sts_task = asyncio.create_task(process_sts_events())
+
+                # Send initial greeting, if the LLM is configured to do so
+                if self.llm:
+                    await self.llm.conversation_started(self)
 
         except Exception as e:
             self.logger.error(f"❌ Error during agent operation: {e}")
@@ -249,16 +250,18 @@ class Agent:
         async def on_audio_received(pcm, user):
             await self.reply_to_audio(pcm, user)
 
-        # listen to video tracks
-        @self._connection.on("track_added")
-        async def on_track(track_id, track_type, user):
-            asyncio.create_task(
-                self._process_video_track(track_id, track_type, user)
-            )
+        # listen to video tracks if we have video processors
+        if self.video_processors:
+            @self._connection.on("track_added")
+            async def on_track(track_id, track_type, user):
+                asyncio.create_task(
+                    self._process_track(track_id, track_type, user)
+                )
 
     async def reply_to_audio(self, pcm_data, user) -> None:
         # first forward to processors
-        await self._forward_audio_to_processors(pcm_data, user)
+        for processor in self.audio_processors:
+            await processor.process_audio(pcm_data, user)
         # when in STS mode call the STS directly
         if self.sts_mode:
             self.llm.send_audio(pcm_data, user)
@@ -268,47 +271,8 @@ class Agent:
             await self.stt.process_audio(pcm_data, user)
 
 
-    async def _forward_audio_to_processors(self, pcm_data, user) -> None:
-        """Forward audio data to processors that want to receive audio."""
-        if not self.processors:
-            return
-
-        try:
-            # Extract audio bytes from PCM data
-            audio_bytes = None
-            if hasattr(pcm_data, 'samples'):
-                # PcmData NamedTuple - extract samples (numpy array)
-                samples = pcm_data.samples
-                if hasattr(samples, 'tobytes'):
-                    audio_bytes = samples.tobytes()
-                else:
-                    # Convert numpy array to bytes
-                    audio_bytes = samples.astype('int16').tobytes()
-            elif isinstance(pcm_data, bytes):
-                # Already bytes
-                audio_bytes = pcm_data
-            else:
-                self.logger.error(f"Unknown PCM data format: {type(pcm_data)}")
-                return
-
-            # Forward to processors that want audio
-            for processor in self.processors:
-                if hasattr(processor, 'receive_audio') and processor.receive_audio:
-                    try:
-                        user_id = user if isinstance(user, str) else getattr(user, 'user_id', str(user))
-                        await processor.process_audio(audio_bytes, user_id)
-                    except Exception as e:
-                        self.logger.error(f"Error forwarding audio to processor {type(processor).__name__}: {e}")
-
-        except Exception as e:
-            self.logger.error(f"Error in audio forwarding: {e}")
-            self.logger.error(traceback.format_exc())
-
     async def _forward_video_to_processors(self, frame, user) -> None:
-        """Forward video frame to processors that want to receive video."""
-        if not self.processors:
-            return
-
+        # TODO: clean this up...
         try:
             from PIL import Image
             import numpy as np
@@ -352,10 +316,9 @@ class Agent:
 
             if pil_image:
                 # Forward to processors that want video
-                video_processors = [p for p in self.processors if hasattr(p, 'receive_video') and p.receive_video]
-                self.logger.debug(f"📤 Forwarding video frame to {len(video_processors)} processors")
+                self.logger.debug(f"📤 Forwarding video frame to {len(self.video_processors)} processors")
                 
-                for processor in video_processors:
+                for processor in self.video_processors:
                     try:
                         user_id = user if isinstance(user, str) else getattr(user, 'user_id', str(user))
                         await processor.process_image(pil_image, user_id)
@@ -367,11 +330,7 @@ class Agent:
             self.logger.error(f"Error in video forwarding: {e}")
             self.logger.error(traceback.format_exc())
 
-    async def _process_video_track(self, track_id: str, track_type: str, user):
-        """Process video frames from a specific track."""
-        self.logger.info(
-            f"🎥 Processing video track: {track_id} from user {user.user_id} (type: {track_type})"
-        )
+    async def _process_track(self, track_id: str, track_type: str, user):
 
         # Only process video tracks
         if track_type != "video":
@@ -438,35 +397,7 @@ class Agent:
         self.logger.error(f"❌ STT Error: {error}")
 
     async def _process_transcription(self, text: str, user=None) -> None:
-        """Process a complete transcription and generate response."""
-        try:
-            # Generate response using LLM
-            if self.llm:
-                # TODO: async version of this
-                response = await self._generate_response(text)
-
-                # Send response via TTS
-                if self.tts and response:
-                    try:
-                        await self.tts.send(response)
-                        self.logger.info(f"🤖 Responded: {response}")
-                    except Exception as e:
-                        self.logger.error(f"Error sending TTS response: {e}")
-                        self.logger.error(traceback.format_exc())
-
-        except Exception as e:
-            self.logger.error(f"Error processing transcription: {e}")
-            self.logger.error(traceback.format_exc())
-
-    async def _generate_response(self, input_text: str) -> str:
-        """Generate a response using the AI model."""
-        try:
-            response = await self.llm.generate(input_text)
-            return response
-        except Exception as e:
-            self.logger.error(f"Error generating response: {e}")
-            self.logger.error(traceback.format_exc())
-            return "I'm sorry, I encountered an error processing your request."
+        await self.reply_to_text(text)
 
     @property
     def sts_mode(self) -> bool:
@@ -488,6 +419,16 @@ class Agent:
             return True
         else:
             return False
+    
+    @property
+    def audio_processors(self) -> List[Any]:
+        """Get processors that want to receive audio."""
+        return [p for p in self.processors if hasattr(p, 'receive_audio') and p.receive_audio]
+    
+    @property
+    def video_processors(self) -> List[Any]:
+        """Get processors that want to receive video."""
+        return [p for p in self.processors if hasattr(p, 'receive_video') and p.receive_video]
 
     def validate_configuration(self):
         """Validate the agent configuration."""

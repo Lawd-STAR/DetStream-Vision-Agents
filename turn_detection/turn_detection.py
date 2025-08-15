@@ -3,10 +3,12 @@ from dataclasses import dataclass
 from enum import Enum
 from pyee import EventEmitter
 from getstream.models import User
+from getstream.video.rtc.track_util import PcmData
 
 
 class TurnEvent(Enum):
     """Events that can occur during turn detection."""
+
     SPEECH_STARTED = "speech_started"
     SPEECH_ENDED = "speech_ended"
     TURN_STARTED = "turn_started"
@@ -18,6 +20,7 @@ class TurnEvent(Enum):
 @dataclass
 class TurnEventData:
     """Data associated with a turn detection event."""
+
     timestamp: float
     speaker: Optional[User] = None
     duration: Optional[float] = None
@@ -30,7 +33,7 @@ class TurnEventData:
 EventListener = Callable[[TurnEventData], None]
 
 
-class TurnDetectionProtocol(Protocol):
+class TurnDetection(Protocol):
     """Protocol defining the interface for turn detection implementations."""
 
     @property
@@ -55,12 +58,41 @@ class TurnDetectionProtocol(Protocol):
         """Stop the turn detection process."""
         ...
 
-    def on(self, event: str, listener: Optional[EventListener] = None) -> Union[None, Callable]:
+    def on(
+        self, event: str, listener: Optional[EventListener] = None
+    ) -> Union[None, Callable]:
         """Add an event listener or use as decorator (from EventEmitter)."""
         ...
 
     def emit(self, event: str, *args: Any) -> bool:
         """Emit an event (from EventEmitter)."""
+        ...
+
+    # --- Unified high-level interface used by Agent ---
+    def start(self) -> None:
+        """Start detection (convenience alias to start_detection)."""
+        ...
+
+    def stop(self) -> None:
+        """Stop detection (convenience alias to stop_detection)."""
+        ...
+
+    async def process_audio(
+        self,
+        audio_data: PcmData,
+        user_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Ingest PcmData audio for a user.
+
+        The implementation should track participants internally as audio comes in.
+        Use the event system (emit/on) to notify when turns change.
+
+        Args:
+            audio_data: PcmData object containing audio samples from Stream
+            user_id: Identifier for the user providing the audio
+            metadata: Optional additional metadata about the audio
+        """
         ...
 
 
@@ -75,7 +107,9 @@ class BaseTurnDetector(EventEmitter):
         self._is_detecting = False
 
     @staticmethod
-    def _validate_durations(mini_pause_duration: float, max_pause_duration: float) -> None:
+    def _validate_durations(
+        mini_pause_duration: float, max_pause_duration: float
+    ) -> None:
         """Validate the pause duration parameters."""
         if mini_pause_duration <= 0:
             raise ValueError("mini_pause_duration must be positive")
@@ -98,7 +132,9 @@ class BaseTurnDetector(EventEmitter):
         """Check if turn detection is currently active."""
         return self._is_detecting
 
-    def _emit_turn_event(self, event_type: TurnEvent, event_data: TurnEventData) -> None:
+    def _emit_turn_event(
+        self, event_type: TurnEvent, event_data: TurnEventData
+    ) -> None:
         """Emit a turn detection event."""
         self.emit(event_type.value, event_data)
 
@@ -110,3 +146,11 @@ class BaseTurnDetector(EventEmitter):
         """Stop the turn detection process."""
         self._is_detecting = False
 
+    # Convenience aliases to align with the unified protocol expected by Agent
+    def start(self) -> None:
+        """Start detection (alias for start_detection)."""
+        self.start_detection()
+
+    def stop(self) -> None:
+        """Stop detection (alias for stop_detection)."""
+        self.stop_detection()

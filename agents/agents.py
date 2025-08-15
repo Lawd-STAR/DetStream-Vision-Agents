@@ -29,6 +29,7 @@ from getstream.plugins.common.stt import STT
 from getstream.plugins.common.tts import TTS
 from getstream.plugins.common.vad import VAD
 from getstream.plugins.common.sts import STS
+from turn_detection.turn_detection import TurnDetection, TurnEvent
 
 
 class Tool(Protocol):
@@ -56,14 +57,6 @@ class LLM(Protocol):
 
 
 # STT and TTS are now imported directly from stream-py package
-
-
-class TurnDetection(Protocol):
-    """Protocol for turn detection services."""
-
-    def detect_turn(self, audio_data: bytes) -> bool:
-        """Detect if it's the agent's turn to speak."""
-        ...
 
 
 class ImageProcessor(Protocol):
@@ -402,16 +395,22 @@ class Agent:
             self.logger.info("🎥 Video track initialized for transformation publishing")
 
         try:
-            # Configure subscription based on whether video processing is enabled
+            # Configure subscription based on what features are enabled
             subscription_config = None
+            track_types = []
+
+            # Subscribe to audio if we have STT or turn detection
+            if self.stt or self.turn_detection:
+                track_types.append(TrackType.TRACK_TYPE_AUDIO)
+
+            # Subscribe to video if we have image processors or video transformer
             if self.image_processors or self.video_transformer:
+                track_types.append(TrackType.TRACK_TYPE_VIDEO)
+
+            # Create subscription config if we need any tracks
+            if track_types:
                 subscription_config = SubscriptionConfig(
-                    default=TrackSubscriptionConfig(
-                        track_types=[
-                            TrackType.TRACK_TYPE_VIDEO,
-                            TrackType.TRACK_TYPE_AUDIO,
-                        ]
-                    )
+                    default=TrackSubscriptionConfig(track_types=track_types)
                 )
 
             async with await rtc.join(
@@ -435,6 +434,10 @@ class Agent:
                 # Set up event handlers
                 await self._setup_event_handlers()
 
+                # Set up turn detection callbacks (start happens later)
+                if self.turn_detection:
+                    self._setup_turn_detection_callbacks()
+
                 # Execute callback after full initialization to prevent race conditions
                 if on_connected_callback and not self._callback_executed:
                     self._callback_executed = True
@@ -455,9 +458,21 @@ class Agent:
 
                     asyncio.create_task(safe_callback())
 
+                # Start turn detection last, after event handlers and track subscriptions are ready
+                if self.turn_detection:
+                    try:
+                        self.turn_detection.start()
+                        self.logger.info("Turn detection started")
+                    except Exception as e:
+                        self.logger.error(
+                            f"Failed to start turn detection: {e}", exc_info=True
+                        )
+
                 try:
                     self.logger.info("🎧 Agent is active - press Ctrl+C to stop")
+                    self.logger.debug("Waiting for connection to end...")
                     await connection.wait()
+                    self.logger.info("Connection ended normally")
                 except Exception as e:
                     self.logger.error(f"❌ Error during agent operation: {e}")
                     self.logger.error(traceback.format_exc())
@@ -477,6 +492,16 @@ class Agent:
         finally:
             self._is_running = False
             self._connection = None
+
+            # Stop turn detection if available
+            if self.turn_detection:
+                try:
+                    self.turn_detection.stop()
+                    self.logger.info("Turn detection stopped")
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error stopping turn detection: {e}", exc_info=True
+                    )
 
             if self.stt:
                 try:
@@ -792,35 +817,84 @@ class Agent:
                 if user_id and user_id != self.bot_id:
                     self.logger.info(f"👋 New participant joined: {user_id}")
                     await self._handle_new_participant(user_id)
+
                 elif user_id == self.bot_id:
-                    self.logger.debug(f'Not subscribing to track: user_id: "{user_id}"')
+                    self.logger.debug(f"Skipping bot's own track: {user_id}")
             except Exception as e:
                 self.logger.error(f"❌ Error handling track published event: {e}")
                 self.logger.error(traceback.format_exc())
 
-        # Handle audio data for STT using Stream SDK pattern
+        # Handle audio data for STT and turn detection using Stream SDK pattern
         @self._connection.on("audio")
         async def on_audio_received(pcm, user):
             """Handle incoming audio data from participants."""
             try:
-                if self.stt and user and user != self.bot_id:
+                # Skip if it's the bot's own audio
+                if user is not None and (
+                    (hasattr(user, "user_id") and user.user_id == self.bot_id)
+                    or (isinstance(user, str) and user == self.bot_id)
+                ):
+                    return
+
+                # Log audio arrival for diagnostics
+                try:
+                    length = len(pcm.data) if hasattr(pcm, "data") else len(pcm)
+                except Exception:
+                    length = -1
+                uid = user.user_id if hasattr(user, "user_id") else str(user)
+                self.logger.debug(f"🔈 Audio event from {uid}: {length} bytes")
+
+                # Process for turn detection (independent of STT)
+                if self.turn_detection and user:
+                    user_id = user.user_id if hasattr(user, "user_id") else str(user)
+
+                    # Process audio for turn detection
+                    try:
+                        await self.turn_detection.process_audio(
+                            pcm,
+                            user_id,
+                            metadata={"timestamp": asyncio.get_event_loop().time()},
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"Turn detection process_audio error: {e}", exc_info=True
+                        )
+
+                # Also process for STT if available
+                if self.stt and user:
                     await self._handle_audio_input(pcm, user)
+
             except Exception as e:
                 self.logger.error(f"Error handling audio received event: {e}")
                 self.logger.error(traceback.format_exc())
 
         # Set up video track handler if image processors or video transformer are configured
-        if (self.image_processors or self.video_transformer) and self._connection:
+        if self._connection:
 
             def on_track_added(track_id, track_type, user):
                 user_id = user.user_id if user else "unknown"
                 self.logger.info(
                     f"🎬 New track detected: {track_id} ({track_type}) from {user_id}"
                 )
-                if track_type == "video":
+                # Handle video tracks
+                if (
+                    track_type == "video"
+                    or getattr(track_type, "value", track_type)
+                    == TrackType.TRACK_TYPE_VIDEO
+                    or track_type == 2
+                ) and (self.image_processors or self.video_transformer):
                     asyncio.create_task(
                         self._process_video_track(track_id, track_type, user)
                     )
+                # Handle audio tracks for turn detection via unified interface if available
+                elif self.turn_detection and (
+                    track_type == "audio"
+                    or getattr(track_type, "value", track_type)
+                    == TrackType.TRACK_TYPE_AUDIO
+                    or track_type == 1
+                ):
+                    # Turn detection will automatically track participants via process_audio
+                    pass
 
             self._connection.on("track_added", on_track_added)
 
@@ -857,15 +931,12 @@ class Agent:
             self.logger.error(traceback.format_exc())
 
     async def _handle_audio_input(self, pcm_data, user) -> None:
-        """Handle incoming audio data from Stream WebRTC connection."""
+        """Handle incoming audio data from Stream WebRTC connection for STT."""
         if not self.stt:
             return
 
         try:
-            # Check if it's our turn to respond (if turn detection is configured)
-            if self.turn_detection and hasattr(pcm_data, "data"):
-                if not self.turn_detection.detect_turn(pcm_data.data):
-                    return
+            # STT processes all audio continuously for best quality
 
             # Set up event listeners for transcription results (one-time setup)
             if not hasattr(self, "_stt_setup"):
@@ -880,6 +951,7 @@ class Agent:
                 await self._process_audio_with_vad(pcm_data, user)
             else:
                 # Without VAD: Process all audio directly through STT
+                # STT needs continuous audio stream for services like Deepgram
                 await self.stt.process_audio(pcm_data, user)
 
         except Exception as e:
@@ -984,6 +1056,16 @@ class Agent:
     async def _process_transcription(self, text: str, user=None) -> None:
         """Process a complete transcription and generate response."""
         try:
+            # Check if it's the agent's turn to respond
+            if self.turn_detection:
+                # Use turn detection callbacks/events rather than polling detect_turn() with transcripts
+                # The turn detection system will signal via callbacks when it's time to respond
+                if not self._should_respond_based_on_turn_detection():
+                    self.logger.debug(
+                        f"Turn detection: Not agent's turn to respond to: {text[:50]}..."
+                    )
+                    return
+
             # Process with pre-processors
             processed_data = text
             for processor in self.pre_processors:
@@ -1113,3 +1195,47 @@ class Agent:
         except Exception as e:
             self.logger.error(f"Error during agent cleanup: {e}")
             self.logger.error(traceback.format_exc())
+
+    def _setup_turn_detection_callbacks(self) -> None:
+        """Set up turn detection callbacks using the event system."""
+        try:
+            # Set up standard turn detection events
+            self.turn_detection.on(TurnEvent.TURN_STARTED.value, self._on_turn_started)
+            self.turn_detection.on(TurnEvent.TURN_ENDED.value, self._on_turn_ended)
+            self.turn_detection.on(
+                TurnEvent.SPEECH_STARTED.value, self._on_speech_started_td
+            )
+            self.turn_detection.on(
+                TurnEvent.SPEECH_ENDED.value, self._on_speech_ended_td
+            )
+
+        except Exception as e:
+            self.logger.warning(f"Error setting up turn detection callbacks: {e}")
+
+    def _should_respond_based_on_turn_detection(self) -> bool:
+        """Check if the agent should respond based on current turn detection state."""
+        try:
+            # Check if turn detection is currently active
+            return self.turn_detection.is_detecting()
+
+        except Exception as e:
+            self.logger.debug(
+                f"Turn detection check error (defaulting to allow response): {e}"
+            )
+            return True  # Default to allowing response on error
+
+    def _on_turn_started(self, event_data) -> None:
+        """Handle when a participant starts their turn."""
+        self.logger.info("Turn started - participant speaking")
+
+    def _on_turn_ended(self, event_data) -> None:
+        """Handle when a participant ends their turn."""
+        self.logger.info("Turn ended - agent may respond")
+
+    def _on_speech_started_td(self, event_data) -> None:
+        """Handle speech start from turn detection."""
+        self.logger.debug("Turn detection: Speech started")
+
+    def _on_speech_ended_td(self, event_data) -> None:
+        """Handle speech end from turn detection."""
+        self.logger.debug("Turn detection: Speech ended")

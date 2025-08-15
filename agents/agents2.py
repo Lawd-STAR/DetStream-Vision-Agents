@@ -103,11 +103,14 @@ class Agent:
         self.create_user()
 
     def setup_stt(self):
-        self.logger.info("🎙️ Setting up STT event listeners")
-        self.stt.on("transcript", self._on_transcript)
-        self.stt.on("partial_transcript", self._on_partial_transcript)
-        self.stt.on("error", self._on_stt_error)
-        self._stt_setup = True
+        if self.stt:
+            self.logger.info("🎙️ Setting up STT event listeners")
+            self.stt.on("transcript", self._on_transcript)
+            self.stt.on("partial_transcript", self._on_partial_transcript)
+            self.stt.on("error", self._on_stt_error)
+            self._stt_setup = True
+        else:
+            self._stt_setup = False
 
     async def say_text(self, text):
         await self.tts.send(text)
@@ -205,13 +208,26 @@ class Agent:
                 if self.llm:
                     await self.llm.conversation_started(self)
 
+                # Keep the agent running and listening
+                self.logger.info("🎧 Agent is active - press Ctrl+C to stop")
+                try:
+                    # Wait for the connection to stay alive
+                    await connection.wait()
+                except Exception as e:
+                    self.logger.error(f"❌ Error while waiting for connection: {e}")
+                    self.logger.error(traceback.format_exc())
+
+        except KeyboardInterrupt:
+            self.logger.info("👋 Shutting down agent...")
         except Exception as e:
             self.logger.error(f"❌ Error during agent operation: {e}")
             self.logger.error(traceback.format_exc())
-            raise
         finally:
             # Use the comprehensive cleanup method
-            await self.close()
+            try:
+                await self.close()
+            except Exception as e:
+                self.logger.debug(f"Error during cleanup: {e}")
 
     async def listen_to_audio_and_video(self) -> None:
         """Set up event handlers for the connection."""
@@ -259,16 +275,43 @@ class Agent:
                 )
 
     async def reply_to_audio(self, pcm_data, user) -> None:
-        # first forward to processors
-        for processor in self.audio_processors:
-            await processor.process_audio(pcm_data, user)
-        # when in STS mode call the STS directly
-        if self.sts_mode:
-            self.llm.send_audio(pcm_data, user)
-        else:
-            # Process audio through STT
-            self.logger.debug(f"🎵 Processing audio from {user}")
-            await self.stt.process_audio(pcm_data, user)
+        if user and user != self.agent_user.id:
+            # first forward to processors
+            try:
+                # Extract audio bytes for processors
+                audio_bytes = None
+                if hasattr(pcm_data, 'samples'):
+                    samples = pcm_data.samples
+                    if hasattr(samples, 'tobytes'):
+                        audio_bytes = samples.tobytes()
+                    else:
+                        audio_bytes = samples.astype('int16').tobytes()
+                elif isinstance(pcm_data, bytes):
+                    audio_bytes = pcm_data
+                else:
+                    self.logger.debug(f"Unknown PCM data format: {type(pcm_data)}")
+                    audio_bytes = pcm_data  # Try as-is
+                
+                # Forward to audio processors
+                for processor in self.audio_processors:
+                    try:
+                        user_id = user if isinstance(user, str) else getattr(user, 'user_id', str(user))
+                        await processor.process_audio(audio_bytes, user_id)
+                    except Exception as e:
+                        self.logger.error(f"Error in audio processor {type(processor).__name__}: {e}")
+                        
+            except Exception as e:
+                self.logger.error(f"Error processing audio for processors: {e}")
+            
+            # when in STS mode call the STS directly
+            if self.sts_mode:
+                if hasattr(self.llm, 'send_audio'):
+                    await self.llm.send_audio(pcm_data, user)
+            else:
+                # Process audio through STT
+                if self.stt:
+                    self.logger.debug(f"🎵 Processing audio from {user}")
+                    await self.stt.process_audio(pcm_data, user)
 
 
     async def _forward_video_to_processors(self, frame, user) -> None:
@@ -331,9 +374,12 @@ class Agent:
             self.logger.error(traceback.format_exc())
 
     async def _process_track(self, track_id: str, track_type: str, user):
+        """Process video frames from a specific track."""
+        user_id = getattr(user, 'user_id', str(user)) if user else "unknown"
+        self.logger.info(f"🎥 Processing track: {track_id} from user {user_id} (type: {track_type})")
 
-        # Only process video tracks
-        if track_type != "video":
+        # Only process video tracks - track_type might be numeric (2 for video)
+        if track_type != "video" and str(track_type) != "2":
             self.logger.debug(f"Ignoring non-video track: {track_type}")
             return
 
@@ -506,30 +552,56 @@ class Agent:
         """Clean up all connections and resources."""
         self._is_running = False
         
-        if self._sts_connection:
-            await self._sts_connection.__aexit__(None, None, None)
+        try:
+            if self._sts_connection and hasattr(self._sts_connection, '__aexit__'):
+                await self._sts_connection.__aexit__(None, None, None)
+        except Exception as e:
+            self.logger.debug(f"Error closing STS connection: {e}")
+        finally:
             self._sts_connection = None
         
-        if self._connection:
-            await self._connection.__aexit__(None, None, None)
+        try:
+            if self._connection and hasattr(self._connection, '__aexit__'):
+                await self._connection.__aexit__(None, None, None)
+        except Exception as e:
+            self.logger.debug(f"Error closing RTC connection: {e}")
+        finally:
             self._connection = None
         
-        if self.stt:
-            await self.stt.close()
+        try:
+            if self.stt and hasattr(self.stt, 'close'):
+                await self.stt.close()
+        except Exception as e:
+            self.logger.debug(f"Error closing STT: {e}")
         
-        if self.tts:
-            await self.tts.close()
+        try:
+            if self.tts and hasattr(self.tts, 'close'):
+                await self.tts.close()
+        except Exception as e:
+            self.logger.debug(f"Error closing TTS: {e}")
         
-        if self._audio_track:
-            self._audio_track.stop()
+        try:
+            if self._audio_track and hasattr(self._audio_track, 'stop'):
+                self._audio_track.stop()
+        except Exception as e:
+            self.logger.debug(f"Error stopping audio track: {e}")
+        finally:
             self._audio_track = None
         
-        if self._video_track:
-            self._video_track.stop()
+        try:
+            if self._video_track and hasattr(self._video_track, 'stop'):
+                self._video_track.stop()
+        except Exception as e:
+            self.logger.debug(f"Error stopping video track: {e}")
+        finally:
             self._video_track = None
         
-        if self._interval_task:
-            self._interval_task.cancel()
+        try:
+            if self._interval_task:
+                self._interval_task.cancel()
+        except Exception as e:
+            self.logger.debug(f"Error canceling interval task: {e}")
+        finally:
             self._interval_task = None
 
     def create_user(self):

@@ -1,19 +1,28 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Protocol, Any
+from typing import Protocol, Any, List
+from enum import Enum
 
 import aiortc
 from PIL.Image import Image
 
 '''
 TODO:
-- nice syntax for audio/video/image booleans. Mixins?
-- cleanup audio_video_image processors in base
+- simple audio test
+- simple video test
 - properly forward to image processors from agent (easy)
 - figure out aysncio flow for video track recv() loop
 
 '''
+
+class ProcessorType(Enum):
+    """Enum for different processor types based on mixins."""
+    AUDIO = "process_audio"
+    VIDEO = "process_video" 
+    IMAGE = "process_image"
+    VIDEO_PUBLISHER = "create_video_track"
+    AUDIO_PUBLISHER = "create_audio_track"
 
 class BaseProcessor(Protocol):
     pass
@@ -22,10 +31,50 @@ class IntervalProcessor(BaseProcessor):
     # TODO: add interval loop
     pass
 
+
+class AudioProcessorMixin:
+    async def process_audio(self, audio_data: bytes, user_id: str, metadata: dict = None) -> None:
+        """Process audio data. Override this method to implement audio processing."""
+        pass
+
+class VideoProcessorMixin:
+    async def process_video(self, track: aiortc.mediastreams.MediaStreamTrack, user_id: str, metadata: dict=None):
+        pass
+
+class ImageProcessorMixin:
+    async def process_image(self,  image: Image.Image, user_id: str, metadata: dict=None):
+        pass
+
+class VideoPublisherMixin:
+    def create_video_track(self):
+        return aiortc.VideoStreamTrack()
+
+class AudioPublisherMixin:
+    def create_audio_track(self):
+        return aiortc.AudioStreamTrack()
+
+def filter_processors(processors: List[BaseProcessor], processor_type: ProcessorType) -> List[BaseProcessor]:
+    """
+    Filter processors based on the processor type using hasattr checks.
+    
+    Args:
+        processors: List of processor instances to filter
+        processor_type: ProcessorType enum value to filter by
+        
+    Returns:
+        List of processors that have the required method/attribute for the given type
+    """
+    filtered = []
+    method_name = processor_type.value
+    
+    for processor in processors:
+        if hasattr(processor, method_name):
+            filtered.append(processor)
+    
+    return filtered
+
+
 class AudioVideoProcessor(BaseProcessor):
-    subscribe_audio = True
-    subscribe_video = True # don't love how we have both the function def and the variable. can be better.
-    subscribe_image = True
     publish_audio = True
     publish_video = True
 
@@ -46,18 +95,12 @@ class AudioVideoProcessor(BaseProcessor):
     def create_audio_track(self):
         return aiortc.AudioStreamTrack(framerate=24000, stereo=False, format="s16")
 
-    def create_video_track(self):
-        return aiortc.VideoStreamTrack()
 
-    async def process_video(self, track: aiortc.mediastreams.MediaStreamTrack, user_id: str, metadata: dict=None):
-        pass
 
-    async def process_image(self,  image: Image.Image, user_id: str, metadata: dict=None):
-        pass
 
-    async def process_audio(self, audio_data: bytes, user_id: str, metadata: dict = None) -> None:
-        """Process audio data. Override this method to implement audio processing."""
-        pass
+
+
+
 
     def should_process(self) -> bool:
         """Check if it's time to process based on the interval."""
@@ -110,7 +153,7 @@ class ImageCapture(AudioVideoProcessor):
 
         self.frame_count += 1
         logging.info(
-            f"📸 Captured frame {self.frame_count}: {filename} ({frame.width}x{frame.height})"
+            f"📸 Captured frame {self.frame_count}: {filename} ({image.width}x{image.height})"
         )
 
         return str(filepath)

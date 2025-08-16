@@ -23,6 +23,7 @@ from agents.agents import (
     TTS,
     LLM,
 )
+from processors.base_processor import filter_processors, ProcessorType
 
 
 
@@ -263,8 +264,8 @@ class Agent:
         async def on_audio_received(pcm, user):
             await self.reply_to_audio(pcm, user)
 
-        # listen to video tracks if we have video processors
-        if self.video_processors:
+        # listen to video tracks if we have video or image processors
+        if self.video_processors or self.image_processors:
 
             @self._connection.on("track_added")
             async def on_track(track_id, track_type, user):
@@ -367,24 +368,45 @@ class Agent:
                 return
 
             if pil_image:
-                # Forward to processors that want video
-                self.logger.debug(
-                    f"📤 Forwarding video frame to {len(self.video_processors)} processors"
+                user_id = (
+                    user
+                    if isinstance(user, str)
+                    else getattr(user, "user_id", str(user))
                 )
-
-                for processor in self.video_processors:
-                    try:
-                        user_id = (
-                            user
-                            if isinstance(user, str)
-                            else getattr(user, "user_id", str(user))
-                        )
-                        await processor.process_image(pil_image, user_id)
-                    except Exception as e:
-                        self.logger.error(
-                            f"Error forwarding video to processor {type(processor).__name__}: {e}"
-                        )
-                        self.logger.error(traceback.format_exc())
+                
+                # Forward to image processors
+                if self.image_processors:
+                    self.logger.debug(
+                        f"📤 Forwarding image to {len(self.image_processors)} image processors"
+                    )
+                    for processor in self.image_processors:
+                        try:
+                            await processor.process_image(pil_image, user_id)
+                        except Exception as e:
+                            self.logger.error(
+                                f"Error forwarding image to processor {type(processor).__name__}: {e}"
+                            )
+                            self.logger.error(traceback.format_exc())
+                
+                # Forward to video processors (these might expect video frames differently)
+                if self.video_processors:
+                    self.logger.debug(
+                        f"📤 Forwarding video to {len(self.video_processors)} video processors"
+                    )
+                    # For video processors, we might need to pass the original frame or track
+                    for processor in self.video_processors:
+                        try:
+                            # Check if processor has process_video method that expects a track
+                            if hasattr(processor, 'process_video'):
+                                # This would need the original track, not the PIL image
+                                # For now, we'll skip video processors in this context
+                                # TODO: Implement proper video track forwarding
+                                pass
+                        except Exception as e:
+                            self.logger.error(
+                                f"Error forwarding video to processor {type(processor).__name__}: {e}"
+                            )
+                            self.logger.error(traceback.format_exc())
 
         except Exception as e:
             self.logger.error(f"Error in video forwarding: {e}")
@@ -490,21 +512,18 @@ class Agent:
 
     @property
     def audio_processors(self) -> List[Any]:
-        """Get processors that want to receive audio."""
-        return [
-            p
-            for p in self.processors
-            if hasattr(p, "receive_audio") and p.receive_audio
-        ]
+        """Get processors that can process audio."""
+        return filter_processors(self.processors, ProcessorType.AUDIO)
 
     @property
     def video_processors(self) -> List[Any]:
-        """Get processors that want to receive video."""
-        return [
-            p
-            for p in self.processors
-            if hasattr(p, "receive_video") and p.receive_video
-        ]
+        """Get processors that can process video."""
+        return filter_processors(self.processors, ProcessorType.VIDEO)
+
+    @property
+    def image_processors(self) -> List[Any]:
+        """Get processors that can process images."""
+        return filter_processors(self.processors, ProcessorType.IMAGE)
 
     def validate_configuration(self):
         """Validate the agent configuration."""

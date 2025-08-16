@@ -6,6 +6,7 @@ from enum import Enum
 
 import aiortc
 from PIL import Image
+from getstream.video.rtc.pb.stream.video.sfu.models import models_pb2
 
 '''
 TODO:
@@ -33,16 +34,16 @@ class IntervalProcessor(BaseProcessor):
 
 
 class AudioProcessorMixin:
-    async def process_audio(self, audio_data: bytes, user_id: str, metadata: dict = None) -> None:
+    async def process_audio(self, audio_data: bytes, participant: models_pb2.Participant) -> None:
         """Process audio data. Override this method to implement audio processing."""
         pass
 
 class VideoProcessorMixin:
-    async def process_video(self, track: aiortc.mediastreams.MediaStreamTrack, user_id: str, metadata: dict=None):
+    async def process_video(self, track: aiortc.mediastreams.MediaStreamTrack, participant: models_pb2.Participant):
         pass
 
 class ImageProcessorMixin:
-    async def process_image(self,  image: Image.Image, user_id: str, metadata: dict=None):
+    async def process_image(self,  image: Image.Image, participant: models_pb2.Participant):
         pass
 
 class VideoPublisherMixin:
@@ -75,32 +76,20 @@ def filter_processors(processors: List[BaseProcessor], processor_type: Processor
 
 
 class AudioVideoProcessor(BaseProcessor):
-    publish_audio = False
-    publish_video = False
 
     def __init__(self, interval: int = 3, receive_audio: bool = False, receive_video: bool = True, *args, **kwargs):
         self.interval = interval
         self.last_process_time = 0
 
-        if self.publish_audio and hasattr(self, 'create_audio_track'):
+        if hasattr(self, 'create_audio_track'):
             self.audio_track = self.create_audio_track()
 
-        if self.publish_video and hasattr(self, 'create_video_track'):
+        if hasattr(self, 'create_video_track'):
             self.video_track = self.create_video_track()
 
     def state(self):
         # Returns relevant data for the conversation with the LLM
         pass
-
-    def create_audio_track(self):
-        return aiortc.AudioStreamTrack()
-
-
-
-
-
-
-
 
     def should_process(self) -> bool:
         """Check if it's time to process based on the interval."""
@@ -112,7 +101,7 @@ class AudioVideoProcessor(BaseProcessor):
         return False
 
 
-class AudioLogger(AudioVideoProcessor):
+class AudioLogger(AudioVideoProcessor, AudioProcessorMixin):
 
     def __init__(self, interval: int = 2):
         super().__init__(interval, receive_audio=True, receive_video=False)
@@ -131,7 +120,7 @@ class AudioLogger(AudioVideoProcessor):
                 f"{len(audio_data)} bytes"
             )
 
-class ImageCapture(AudioVideoProcessor):
+class ImageCapture(AudioVideoProcessor, ImageProcessorMixin):
     """Handles video frame capture and storage at regular intervals."""
 
     def __init__(self, output_dir: str = "captured_frames", interval: int = 3, *args, **kwargs):
@@ -144,6 +133,12 @@ class ImageCapture(AudioVideoProcessor):
         logging.info(f"📁 Saving captured frames to: {self.output_dir.absolute()}")
 
     async def process_image(self, image: Image.Image, user_id: str, metadata: dict = None):
+        # Check if enough time has passed since last capture
+        if not self.should_process():
+            return None
+            
+        logging.info(f"📸 ImageCapture running process_image for user {user_id}")
+        
         timestamp = int(asyncio.get_event_loop().time())
         filename = f"frame_{user_id}_{timestamp}_{self.frame_count:04d}.jpg"
         filepath = self.output_dir / filename

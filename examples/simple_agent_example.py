@@ -30,7 +30,6 @@ from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.plugins.deepgram.stt import DeepgramSTT
 
 from processors.base_processor import ImageCapture, AudioLogger
-
 from utils import open_demo
 
 from models import OpenAILLM
@@ -38,7 +37,7 @@ from models import OpenAILLM
 # Import the new Agent class from agents2.py
 from agents.agents2 import Agent
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
 async def main() -> None:
@@ -76,15 +75,6 @@ async def main() -> None:
 
         # Keep the agent running
         logging.info("🤖 Agent has joined the call. Press Ctrl+C to exit.")
-        print()
-        print("🎯 Agent is now active with the following features:")
-        print("   • 🎤 Voice interaction (STT + LLM + TTS)")
-        print("   • 📸 Image capture every 3 seconds")
-        print("   • 📊 Image analysis every 5 seconds")
-        print("   • 🎵 Audio logging every 2 seconds")
-        print("   • 📁 Images saved to 'captured_frames' directory")
-        print("   • Join the call from your browser to interact!")
-        print()
 
         while True:
             await asyncio.sleep(1)

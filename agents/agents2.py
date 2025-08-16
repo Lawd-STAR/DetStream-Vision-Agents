@@ -8,6 +8,7 @@ from uuid import uuid4
 from getstream.models import User
 from getstream.video import rtc
 from getstream.video.rtc import audio_track
+from getstream.video.rtc.pb.stream.video.sfu.models import models_pb2
 from getstream.video.rtc.tracks import (
     SubscriptionConfig,
     TrackSubscriptionConfig,
@@ -30,6 +31,7 @@ from processors.base_processor import filter_processors, ProcessorType
 """
 TODO
 - Reduce logging verbosity
+- User a better pcm_data alternative. https://github.com/GetStream/stream-py/blob/webrtc/getstream/video/rtc/track_util.py#L17
 - Screenshot integration (once a second)
 - Yolo integration (like https://github.com/GetStream/video-ai-samples/blob/ab4913a6e07301de50f83e4bf2b7b376a375af99/live_sports_coach/kickboxing_example.py#L369)
 """
@@ -271,8 +273,8 @@ class Agent:
             async def on_track(track_id, track_type, user):
                 asyncio.create_task(self._process_track(track_id, track_type, user))
 
-    async def reply_to_audio(self, pcm_data, user) -> None:
-        if user and user != self.agent_user.id:
+    async def reply_to_audio(self, pcm_data, participant: models_pb2.Participant) -> None:
+        if participant and participant != self.agent_user.id:
             # first forward to processors
             try:
                 # Extract audio bytes for processors
@@ -292,12 +294,7 @@ class Agent:
                 # Forward to audio processors
                 for processor in self.audio_processors:
                     try:
-                        user_id = (
-                            user
-                            if isinstance(user, str)
-                            else getattr(user, "user_id", str(user))
-                        )
-                        await processor.process_audio(audio_bytes, user_id)
+                        await processor.process_audio(audio_bytes, participant.user_id)
                     except Exception as e:
                         self.logger.error(
                             f"Error in audio processor {type(processor).__name__}: {e}"
@@ -309,114 +306,17 @@ class Agent:
             # when in STS mode call the STS directly
             if self.sts_mode:
                 if hasattr(self.llm, "send_audio"):
-                    await self.llm.send_audio(pcm_data, user)
+                    await self.llm.send_audio(pcm_data, participant)
             else:
                 # Process audio through STT
                 if self.stt:
-                    self.logger.debug(f"🎵 Processing audio from {user}")
-                    await self.stt.process_audio(pcm_data, user)
+                    self.logger.debug(f"🎵 Processing audio from {participant}")
+                    await self.stt.process_audio(pcm_data, participant)
 
-    async def _forward_video_to_processors(self, frame, user) -> None:
-        # TODO: clean this up...
-        try:
-            from PIL import Image
-            import numpy as np
-
-            self.logger.debug(f"🎥 Processing video frame of type: {type(frame)}")
-
-            pil_image = None
-
-            # Try to convert different frame formats to PIL Image
-            if isinstance(frame, Image.Image):
-                # Already a PIL Image
-                pil_image = frame
-            elif hasattr(frame, "to_ndarray"):
-                # VideoFrame from aiortc - convert to numpy array then PIL
-                try:
-                    array = frame.to_ndarray(format="rgb24")
-                    pil_image = Image.fromarray(array)
-                    self.logger.debug(
-                        f"✅ Converted VideoFrame to PIL Image: {pil_image.size}"
-                    )
-                except Exception as e:
-                    self.logger.error(f"Error converting VideoFrame to PIL: {e}")
-                    return
-            elif hasattr(frame, "to_image"):
-                # Some other video frame format
-                try:
-                    pil_image = frame.to_image()
-                    self.logger.debug(
-                        f"✅ Converted frame to PIL Image using to_image(): {pil_image.size}"
-                    )
-                except Exception as e:
-                    self.logger.error(f"Error converting frame using to_image(): {e}")
-                    return
-            elif isinstance(frame, np.ndarray):
-                # Numpy array - convert to PIL
-                try:
-                    pil_image = Image.fromarray(frame)
-                    self.logger.debug(
-                        f"✅ Converted numpy array to PIL Image: {pil_image.size}"
-                    )
-                except Exception as e:
-                    self.logger.error(f"Error converting numpy array to PIL: {e}")
-                    return
-            else:
-                self.logger.warning(
-                    f"⚠️ Unknown video frame format: {type(frame)}. Available methods: {[method for method in dir(frame) if not method.startswith('_')]}"
-                )
-                return
-
-            if pil_image:
-                user_id = (
-                    user
-                    if isinstance(user, str)
-                    else getattr(user, "user_id", str(user))
-                )
-                
-                # Forward to image processors
-                if self.image_processors:
-                    self.logger.debug(
-                        f"📤 Forwarding image to {len(self.image_processors)} image processors"
-                    )
-                    for processor in self.image_processors:
-                        try:
-                            await processor.process_image(pil_image, user_id)
-                        except Exception as e:
-                            self.logger.error(
-                                f"Error forwarding image to processor {type(processor).__name__}: {e}"
-                            )
-                            self.logger.error(traceback.format_exc())
-                
-                # Forward to video processors (these might expect video frames differently)
-                if self.video_processors:
-                    self.logger.debug(
-                        f"📤 Forwarding video to {len(self.video_processors)} video processors"
-                    )
-                    # For video processors, we might need to pass the original frame or track
-                    for processor in self.video_processors:
-                        try:
-                            # Check if processor has process_video method that expects a track
-                            if hasattr(processor, 'process_video'):
-                                # This would need the original track, not the PIL image
-                                # For now, we'll skip video processors in this context
-                                # TODO: Implement proper video track forwarding
-                                pass
-                        except Exception as e:
-                            self.logger.error(
-                                f"Error forwarding video to processor {type(processor).__name__}: {e}"
-                            )
-                            self.logger.error(traceback.format_exc())
-
-        except Exception as e:
-            self.logger.error(f"Error in video forwarding: {e}")
-            self.logger.error(traceback.format_exc())
-
-    async def _process_track(self, track_id: str, track_type: str, user):
+    async def _process_track(self, track_id: str, track_type: str, participant: models_pb2.Participant):
         """Process video frames from a specific track."""
-        user_id = getattr(user, "user_id", str(user)) if user else "unknown"
         self.logger.info(
-            f"🎥 Processing track: {track_id} from user {user_id} (type: {track_type})"
+            f"🎥 Processing track: {track_id} from user {participant.user_id} (type: {track_type})"
         )
 
         # Only process video tracks - track_type might be numeric (2 for video)
@@ -429,43 +329,65 @@ class Agent:
         if not track:
             self.logger.error(f"❌ Failed to subscribe to track: {track_id}")
             return
+        
+        self.logger.info(f"✅ Successfully subscribed to video track: {track_id}, track object: {track}")
 
-        self.logger.info(
-            f"✅ Successfully subscribed to video track from {user.user_id}"
-        )
+        # Give the track a moment to be ready
+        await asyncio.sleep(0.5)
+
+        hasImageProcessers = len(self.image_processors) > 0
+        self.logger.info(f"📸 Has image processors: {hasImageProcessers}, count: {len(self.image_processors)}")
 
         try:
+            self.logger.info(f"📸 Starting video processing loop for track {track_id}")
+            self.logger.info(f"📸 Track readyState: {getattr(track, 'readyState', 'unknown')}")
+            self.logger.info(f"📸 Track kind: {getattr(track, 'kind', 'unknown')}")
+            self.logger.info(f"📸 Track enabled: {getattr(track, 'enabled', 'unknown')}")
+            self.logger.info(f"📸 Track muted: {getattr(track, 'muted', 'unknown')}")
             while True:
+                self.logger.debug(f"📸 Video processing loop iteration for track {track_id}")
                 try:
-                    # Receive video frame
-                    video_frame = await track.recv()
-                    if not video_frame:
-                        continue
+                    # image processors
+                    if hasImageProcessers:
+                        # Receive video frame
+                        self.logger.debug("📸 Attempting to receive video frame...")
+                        try:
+                            video_frame = await track.recv()
+                            self.logger.info(f"📸 Received video frame: {video_frame} - {video_frame.time} - {video_frame.format}")
+                            if not video_frame:
+                                self.logger.debug("📸 skip no video frame received")
+                                continue
 
-                    # Convert to PIL Image
-                    img = video_frame.to_image()
-                    self.logger.debug(
-                        f"📸 Converted video frame to PIL Image: {img.size}"
-                    )
+                            # Convert to PIL Image
+                            img = video_frame.to_image()
+                            self.logger.info(f"📸 Converted video frame to PIL Image: {img.size}")
 
-                    # Forward to processors that want video
-                    #TODO: properly forward to image processors
-                    await self._forward_video_to_processors(img, user)
+                            for processor in self.image_processors:
+                                try:
+                                    await processor.process_image(img, participant.user_id)
+                                except Exception as e:
+                                    self.logger.error(f"Error in image processor {type(processor).__name__}: {e}")
+                        except Exception as recv_error:
+                            self.logger.error(f"📸 Error receiving video frame: {recv_error} - {type(recv_error)}")
+                            break
 
+                    # video processors
+                    for processor in self.video_processors:
+                        try:
+                            await processor.process_video(track, participant.user_id)
+                        except Exception as e:
+                            self.logger.error(f"Error in video processor {type(processor).__name__}: {e}")
+                            
+                except asyncio.TimeoutError:
+                    self.logger.debug("📸 Timeout waiting for video frame, continuing...")
+                    continue
                 except Exception as e:
-                    if "Connection closed" in str(e) or "Track ended" in str(e):
-                        self.logger.info(
-                            f"🔌 Video track ended for user {user.user_id}"
-                        )
-                        break
-                    else:
-                        self.logger.error(f"❌ Error processing video frame: {e}")
-                        self.logger.error(traceback.format_exc())
-                        await asyncio.sleep(1)  # Brief pause before retry
-
+                    self.logger.error(f"Error processing track {track_id}: {e}")
+                    break
         except Exception as e:
-            self.logger.error(f"❌ Fatal error in video processing: {e}")
+            self.logger.error(f"Fatal error in track processing {track_id}: {e}")
             self.logger.error(traceback.format_exc())
+
 
     async def _on_partial_transcript(self, text: str, user=None, metadata=None):
         """Handle partial transcript from STT service."""
@@ -658,36 +580,6 @@ class Agent:
         except Exception as e:
             self.logger.debug(f"Error canceling interval task: {e}")
         finally:
-            self._interval_task = None
-
-    async def close(self):
-        """Clean up all connections and resources."""
-        self._is_running = False
-        
-        if self._sts_connection:
-            await self._sts_connection.__aexit__(None, None, None)
-            self._sts_connection = None
-        
-        if self._connection:
-            await self._connection.__aexit__(None, None, None)
-            self._connection = None
-        
-        if self.stt:
-            await self.stt.close()
-        
-        if self.tts:
-            await self.tts.close()
-        
-        if self._audio_track:
-            self._audio_track.stop()
-            self._audio_track = None
-        
-        if self._video_track:
-            self._video_track.stop()
-            self._video_track = None
-        
-        if self._interval_task:
-            self._interval_task.cancel()
             self._interval_task = None
 
     def create_user(self):

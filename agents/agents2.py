@@ -344,33 +344,23 @@ class Agent:
             self.logger.info(f"📸 Track kind: {getattr(track, 'kind', 'unknown')}")
             self.logger.info(f"📸 Track enabled: {getattr(track, 'enabled', 'unknown')}")
             self.logger.info(f"📸 Track muted: {getattr(track, 'muted', 'unknown')}")
+            # Use the exact same pattern as the working example
             while True:
-                self.logger.debug(f"📸 Video processing loop iteration for track {track_id}")
                 try:
-                    # image processors
-                    if hasImageProcessers:
-                        # Receive video frame
-                        self.logger.debug("📸 Attempting to receive video frame...")
-                        try:
-                            video_frame = await track.recv()
-                            self.logger.info(f"📸 Received video frame: {video_frame} - {video_frame.time} - {video_frame.format}")
-                            if not video_frame:
-                                self.logger.debug("📸 skip no video frame received")
-                                continue
-
-                            # Convert to PIL Image
-                            img = video_frame.to_image()
-                            self.logger.info(f"📸 Converted video frame to PIL Image: {img.size}")
-
-                            for processor in self.image_processors:
-                                try:
-                                    await processor.process_image(img, participant.user_id)
-                                except Exception as e:
-                                    self.logger.error(f"Error in image processor {type(processor).__name__}: {e}")
-                        except Exception as recv_error:
-                            self.logger.error(f"📸 Error receiving video frame: {recv_error} - {type(recv_error)}")
-                            break
-
+                    self.logger.debug("📸 About to call track.recv()...")
+                    video_frame = await track.recv()
+                    self.logger.info(f"📸 Video frame received: {video_frame.time} - {video_frame.format}")
+                    
+                    if video_frame and hasImageProcessers:
+                        img = video_frame.to_image()
+                        self.logger.info(f"📸 Converted to PIL Image: {img.size}")
+                        
+                        for processor in self.image_processors:
+                            try:
+                                await processor.process_image(img, participant.user_id)
+                            except Exception as e:
+                                self.logger.error(f"Error in image processor {type(processor).__name__}: {e}")
+                    
                     # video processors
                     for processor in self.video_processors:
                         try:
@@ -378,11 +368,8 @@ class Agent:
                         except Exception as e:
                             self.logger.error(f"Error in video processor {type(processor).__name__}: {e}")
                             
-                except asyncio.TimeoutError:
-                    self.logger.debug("📸 Timeout waiting for video frame, continuing...")
-                    continue
                 except Exception as e:
-                    self.logger.error(f"Error processing track {track_id}: {e}")
+                    self.logger.error(f"📸 Error receiving track: {e} - {type(e)}")
                     break
         except Exception as e:
             self.logger.error(f"Fatal error in track processing {track_id}: {e}")

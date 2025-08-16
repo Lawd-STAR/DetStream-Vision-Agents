@@ -9,7 +9,7 @@ import av
 from dotenv import load_dotenv
 from aiortc.contrib.media import MediaPlayer
 from PIL import Image
-from google.genai.types import Modality, MediaResolution, TurnCoverage, ActivityHandling
+from google.genai.types import Modality, MediaResolution, TurnCoverage
 
 from utils import create_user, open_browser
 from getstream.stream import Stream
@@ -19,7 +19,6 @@ import asyncio
 import os
 from pathlib import Path
 import time
-import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from google import genai
@@ -29,7 +28,11 @@ import websockets
 from getstream.video.call import Call
 from getstream.video.rtc.track_util import PcmData
 from getstream.video.rtc.audio_track import AudioStreamTrack
-from getstream.video.rtc.tracks import SubscriptionConfig, TrackSubscriptionConfig, TrackType
+from getstream.video.rtc.tracks import (
+    SubscriptionConfig,
+    TrackSubscriptionConfig,
+    TrackType,
+)
 
 from ultralytics import YOLO
 import cv2
@@ -63,11 +66,13 @@ class PoseVideoTrack(aiortc.VideoStreamTrack):
     def __init__(self):
         super().__init__()
         self.frame_q = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
-        self.last_frame = Image.new('RGB', (1920, 1080), color='black')
+        self.last_frame = Image.new("RGB", (1920, 1080), color="black")
         # Load only pose model
-        self.pose_model = YOLO('yolo11n-pose.pt')
-        self.pose_model.to('cpu')  # Ensure CPU inference for stability
-        self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pose_processor")
+        self.pose_model = YOLO("yolo11n-pose.pt")
+        self.pose_model.to("cpu")  # Ensure CPU inference for stability
+        self.executor = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="pose_processor"
+        )
         self._shutdown = False
         # Set video quality parameters
         self.width = 1920
@@ -77,7 +82,7 @@ class PoseVideoTrack(aiortc.VideoStreamTrack):
     def cleanup(self):
         """Clean up resources"""
         self._shutdown = True
-        if hasattr(self, 'executor'):
+        if hasattr(self, "executor"):
             self.executor.shutdown(wait=False)
 
     async def recv(self) -> av.frame.Frame:
@@ -93,7 +98,9 @@ class PoseVideoTrack(aiortc.VideoStreamTrack):
 
         # Ensure the image is the correct size before creating video frame
         if self.last_frame.size != (self.width, self.height):
-            self.last_frame = self.last_frame.resize((self.width, self.height), Image.Resampling.LANCZOS)
+            self.last_frame = self.last_frame.resize(
+                (self.width, self.height), Image.Resampling.LANCZOS
+            )
 
         av_frame = av.VideoFrame.from_image(self.last_frame)
         av_frame.pts = pts
@@ -109,7 +116,9 @@ class PoseVideoTrack(aiortc.VideoStreamTrack):
 
             # Store original dimensions for quality preservation
             original_height, original_width = frame_array.shape[:2]
-            print(f"Processing pose detection on frame: {original_width}x{original_height}")
+            print(
+                f"Processing pose detection on frame: {original_width}x{original_height}"
+            )
 
             # Run pose detection on every frame
             pose_results = self.pose_model(
@@ -117,7 +126,7 @@ class PoseVideoTrack(aiortc.VideoStreamTrack):
                 verbose=False,
                 imgsz=512,  # Balanced image size for quality and speed
                 conf=0.5,  # Higher confidence threshold
-                device='cpu'
+                device="cpu",
             )
 
             if not pose_results:
@@ -138,26 +147,80 @@ class PoseVideoTrack(aiortc.VideoStreamTrack):
                     # Draw keypoints
                     for i, (x, y, conf) in enumerate(kpts):
                         if conf > 0.5:  # Only draw confident keypoints
-                            cv2.circle(annotated_frame, (int(x), int(y)), 5, (0, 255, 0), -1)
+                            cv2.circle(
+                                annotated_frame, (int(x), int(y)), 5, (0, 255, 0), -1
+                            )
 
                     # Draw skeleton connections with enhanced hand/wrist tracking
                     connections = [
-                        (0, 1), (0, 2), (1, 3), (2, 4),  # Head connections
-                        (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),  # Arm connections
-                        (5, 11), (6, 12), (11, 12),  # Torso connections
-                        (11, 13), (13, 15), (12, 14), (14, 16),  # Leg connections
+                        (0, 1),
+                        (0, 2),
+                        (1, 3),
+                        (2, 4),  # Head connections
+                        (5, 6),
+                        (5, 7),
+                        (7, 9),
+                        (6, 8),
+                        (8, 10),  # Arm connections
+                        (5, 11),
+                        (6, 12),
+                        (11, 12),  # Torso connections
+                        (11, 13),
+                        (13, 15),
+                        (12, 14),
+                        (14, 16),  # Leg connections
                         # Enhanced hand and wrist connections for kickboxing
-                        (9, 15), (15, 16), (16, 17), (17, 18), (18, 19),  # Right hand thumb
-                        (9, 20), (20, 21), (21, 22), (22, 23), (23, 24),  # Right hand index
-                        (9, 25), (25, 26), (26, 27), (27, 28), (28, 29),  # Right hand middle
-                        (9, 30), (30, 31), (31, 32), (32, 33), (33, 34),  # Right hand ring
-                        (9, 35), (35, 36), (36, 37), (37, 38), (38, 39),  # Right hand pinky
+                        (9, 15),
+                        (15, 16),
+                        (16, 17),
+                        (17, 18),
+                        (18, 19),  # Right hand thumb
+                        (9, 20),
+                        (20, 21),
+                        (21, 22),
+                        (22, 23),
+                        (23, 24),  # Right hand index
+                        (9, 25),
+                        (25, 26),
+                        (26, 27),
+                        (27, 28),
+                        (28, 29),  # Right hand middle
+                        (9, 30),
+                        (30, 31),
+                        (31, 32),
+                        (32, 33),
+                        (33, 34),  # Right hand ring
+                        (9, 35),
+                        (35, 36),
+                        (36, 37),
+                        (37, 38),
+                        (38, 39),  # Right hand pinky
                         # Left hand connections (if available)
-                        (8, 45), (45, 46), (46, 47), (47, 48), (48, 49),  # Left hand thumb
-                        (8, 50), (50, 51), (51, 52), (52, 53), (53, 54),  # Left hand index
-                        (8, 55), (55, 56), (56, 57), (57, 58), (58, 59),  # Left hand middle
-                        (8, 60), (60, 61), (61, 62), (62, 63), (63, 64),  # Left hand ring
-                        (8, 65), (65, 66), (66, 67), (67, 68), (68, 69),  # Left hand pinky
+                        (8, 45),
+                        (45, 46),
+                        (46, 47),
+                        (47, 48),
+                        (48, 49),  # Left hand thumb
+                        (8, 50),
+                        (50, 51),
+                        (51, 52),
+                        (52, 53),
+                        (53, 54),  # Left hand index
+                        (8, 55),
+                        (55, 56),
+                        (56, 57),
+                        (57, 58),
+                        (58, 59),  # Left hand middle
+                        (8, 60),
+                        (60, 61),
+                        (61, 62),
+                        (62, 63),
+                        (63, 64),  # Left hand ring
+                        (8, 65),
+                        (65, 66),
+                        (66, 67),
+                        (67, 68),
+                        (68, 69),  # Left hand pinky
                     ]
 
                     for start_idx, end_idx in connections:
@@ -172,7 +235,13 @@ class PoseVideoTrack(aiortc.VideoStreamTrack):
                                     color = (255, 255, 0)  # Yellow for left hand
                                 else:  # Main body
                                     color = (255, 0, 0)  # Blue for main skeleton
-                                cv2.line(annotated_frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                                cv2.line(
+                                    annotated_frame,
+                                    (int(x1), int(y1)),
+                                    (int(x2), int(y2)),
+                                    color,
+                                    2,
+                                )
 
                     # Highlight wrist positions specifically for kickboxing analysis
                     wrist_keypoints = [9, 10]  # Right and left wrists
@@ -181,15 +250,41 @@ class PoseVideoTrack(aiortc.VideoStreamTrack):
                             x, y, conf = kpts[wrist_idx]
                             if conf > 0.5:
                                 # Draw larger, more visible wrist markers
-                                cv2.circle(annotated_frame, (int(x), int(y)), 8, (0, 0, 255), -1)  # Red wrist markers
-                                cv2.circle(annotated_frame, (int(x), int(y)), 10, (255, 255, 255), 2)  # White outline
+                                cv2.circle(
+                                    annotated_frame,
+                                    (int(x), int(y)),
+                                    8,
+                                    (0, 0, 255),
+                                    -1,
+                                )  # Red wrist markers
+                                cv2.circle(
+                                    annotated_frame,
+                                    (int(x), int(y)),
+                                    10,
+                                    (255, 255, 255),
+                                    2,
+                                )  # White outline
 
                                 # Add wrist labels
                                 wrist_label = "R Wrist" if wrist_idx == 9 else "L Wrist"
-                                cv2.putText(annotated_frame, wrist_label, (int(x) + 15, int(y) - 5),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-                                cv2.putText(annotated_frame, wrist_label, (int(x) + 15, int(y) - 5),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                                cv2.putText(
+                                    annotated_frame,
+                                    wrist_label,
+                                    (int(x) + 15, int(y) - 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.5,
+                                    (255, 255, 255),
+                                    2,
+                                )
+                                cv2.putText(
+                                    annotated_frame,
+                                    wrist_label,
+                                    (int(x) + 15, int(y) - 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.5,
+                                    (0, 0, 0),
+                                    1,
+                                )
             return annotated_frame
         except Exception as e:
             print(f"Error in pose processing: {e}")
@@ -203,8 +298,10 @@ class PoseVideoTrack(aiortc.VideoStreamTrack):
         try:
             # Add timeout to prevent blocking
             processed_array = await asyncio.wait_for(
-                loop.run_in_executor(self.executor, self._process_pose_sync, frame_array),
-                timeout=2.0  # 2 second timeout
+                loop.run_in_executor(
+                    self.executor, self._process_pose_sync, frame_array
+                ),
+                timeout=2.0,  # 2 second timeout
             )
             return Image.fromarray(processed_array)
         except asyncio.TimeoutError:
@@ -222,7 +319,9 @@ async def play_audio(audio_in_queue, audio_track):
         await audio_track.write(bytestream)
 
 
-async def gather_responses(session: "genai.aio.live.Session", output: Path, audio_in_queue):
+async def gather_responses(
+    session: "genai.aio.live.Session", output: Path, audio_in_queue
+):
     """Collect model responses and append parsed JSON to output list."""
     output_buffer = ""
     input_buffer = ""
@@ -276,7 +375,9 @@ async def send_pose_frames_to_gemini(session, pose_frame_queue):
 
                     if pose_frame and session:
                         await session.send_realtime_input(media=pose_frame)
-                        print(f"Sent pose frame to Gemini Live (queue size: {pose_frame_queue.qsize()})")
+                        print(
+                            f"Sent pose frame to Gemini Live (queue size: {pose_frame_queue.qsize()})"
+                        )
                         last_send_time = current_time
 
                 except asyncio.QueueEmpty:
@@ -289,8 +390,16 @@ async def send_pose_frames_to_gemini(session, pose_frame_queue):
             await asyncio.sleep(1.0)
 
 
-async def on_track_added(track_id, track_type, user, target_user_id, ai_connection, audio_in_queue, pose_track,
-                         audio_track):
+async def on_track_added(
+    track_id,
+    track_type,
+    user,
+    target_user_id,
+    ai_connection,
+    audio_in_queue,
+    pose_track,
+    audio_track,
+):
     """Handle a new track being added to the ai connection."""
     global g_session
     print(f"Track added: {track_id} for user {user} of type {track_type}")
@@ -305,7 +414,10 @@ async def on_track_added(track_id, track_type, user, target_user_id, ai_connecti
 
     if track:
         if not g_session:
-            client = genai.Client(http_options={"api_version": "v1beta"}, api_key=os.getenv("GOOGLE_API_KEY"))
+            client = genai.Client(
+                http_options={"api_version": "v1beta"},
+                api_key=os.getenv("GOOGLE_API_KEY"),
+            )
             PROMPT = """
             You are a profession kickboxer turned coach. You have a snarky coaching method and a lot of personality.  
             You are given a video of a player learning kickboxing.
@@ -349,9 +461,7 @@ async def on_track_added(track_id, track_type, user, target_user_id, ai_connecti
                 media_resolution=MediaResolution.MEDIA_RESOLUTION_MEDIUM,
                 context_window_compression=types.ContextWindowCompressionConfig(
                     trigger_tokens=25600,
-                    sliding_window=types.SlidingWindow(
-                        target_tokens=12800
-                    )
+                    sliding_window=types.SlidingWindow(target_tokens=12800),
                 ),
                 input_audio_transcription=types.AudioTranscriptionConfig(),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
@@ -361,8 +471,8 @@ async def on_track_added(track_id, track_type, user, target_user_id, ai_connecti
             )
 
             async with client.aio.live.connect(
-                    model="models/gemini-live-2.5-flash-preview",
-                    config=gemini_config,
+                model="models/gemini-live-2.5-flash-preview",
+                config=gemini_config,
             ) as session:
                 g_session = session
 
@@ -370,9 +480,15 @@ async def on_track_added(track_id, track_type, user, target_user_id, ai_connecti
                 pose_frame_queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
 
                 # Start tasks
-                asyncio.create_task(gather_responses(session, Path("debug/kickboxing_analysis.txt"), audio_in_queue))
+                asyncio.create_task(
+                    gather_responses(
+                        session, Path("debug/kickboxing_analysis.txt"), audio_in_queue
+                    )
+                )
                 asyncio.create_task(play_audio(audio_in_queue, audio_track))
-                asyncio.create_task(send_pose_frames_to_gemini(session, pose_frame_queue))
+                asyncio.create_task(
+                    send_pose_frames_to_gemini(session, pose_frame_queue)
+                )
 
                 frame_count = 0
 
@@ -384,7 +500,9 @@ async def on_track_added(track_id, track_type, user, target_user_id, ai_connecti
                             print(f"Processing frame {frame_count}: {img.size}")
 
                             # Process every frame with pose detection
-                            pose_annotated_frame = await pose_track.process_pose_async(img)
+                            pose_annotated_frame = await pose_track.process_pose_async(
+                                img
+                            )
 
                             # Update display queue with processed frame
                             try:
@@ -408,7 +526,9 @@ async def on_track_added(track_id, track_type, user, target_user_id, ai_connecti
                                     pass
 
                             if args.debug:
-                                pose_annotated_frame.save(f"debug/kickboxing_frame_{frame_count}.png")
+                                pose_annotated_frame.save(
+                                    f"debug/kickboxing_frame_{frame_count}.png"
+                                )
 
                             frame_count += 1
 
@@ -433,7 +553,7 @@ async def publish_media(call: Call, user_id: str, player: MediaPlayer):
 
 
 async def main():
-    print(f"kickboxing Coach AI Example")
+    print("kickboxing Coach AI Example")
     print("=" * 50)
 
     # Load environment variables
@@ -476,14 +596,16 @@ async def main():
     try:
         # Join all bots first and add their tracks
         async with await rtc.join(
-                call,
-                ai_user_id,
-                subscription_config=SubscriptionConfig(
-                    default=TrackSubscriptionConfig(track_types=[
+            call,
+            ai_user_id,
+            subscription_config=SubscriptionConfig(
+                default=TrackSubscriptionConfig(
+                    track_types=[
                         TrackType.TRACK_TYPE_VIDEO,
                     ]
-                    ))) as ai_connection:
-
+                )
+            ),
+        ) as ai_connection:
             # Create pose video track for displaying pose-annotated video
             pose_track = PoseVideoTrack()
 
@@ -491,19 +613,29 @@ async def main():
             audio_in_queue = asyncio.Queue()
 
             # Initialize audio track for Gemini responses
-            audio_track = AudioStreamTrack(framerate=RECEIVE_SAMPLE_RATE, stereo=False, format="s16")
+            audio_track = AudioStreamTrack(
+                framerate=RECEIVE_SAMPLE_RATE, stereo=False, format="s16"
+            )
             await ai_connection.add_tracks(video=pose_track, audio=audio_track)
 
             # Define event handler with access to pose_track and audio_track
             async def handle_track_added(track_id, track_type, user):
-                await on_track_added(track_id, track_type, user, player_user_id, ai_connection, audio_in_queue,
-                                     pose_track, audio_track)
+                await on_track_added(
+                    track_id,
+                    track_type,
+                    user,
+                    player_user_id,
+                    ai_connection,
+                    audio_in_queue,
+                    pose_track,
+                    audio_track,
+                )
 
             ai_connection.on(
                 "track_added",
                 lambda track_id, track_type, user: asyncio.create_task(
                     handle_track_added(track_id, track_type, user)
-                )
+                ),
             )
 
             # Handle audio from player for Gemini Live
@@ -513,7 +645,7 @@ async def main():
                     await g_session.send_realtime_input(
                         audio=types.Blob(
                             data=pcm.samples.astype(np.int16).tobytes(),
-                            mime_type="audio/pcm;rate=48000"
+                            mime_type="audio/pcm;rate=48000",
                         )
                     )
 
@@ -522,7 +654,9 @@ async def main():
             await asyncio.sleep(3)
 
             if input_media_player:
-                asyncio.create_task(publish_media(call, player_user_id, input_media_player))
+                asyncio.create_task(
+                    publish_media(call, player_user_id, input_media_player)
+                )
 
             await ai_connection.wait()
     except Exception as e:
@@ -539,16 +673,15 @@ if __name__ == "__main__":
     # Parse command line arguments
     args_parser = argparse.ArgumentParser(description="Coach AI Example")
     args_parser.add_argument(
-        "-i", "--input-file",
+        "-i",
+        "--input-file",
         required=False,
-        help="Input file with video and audio tracks to publish. " \
-             "If an input file is specified, it will be used. Otherwise, " \
-             "the bot will wait till a video track is published",
+        help="Input file with video and audio tracks to publish. "
+        "If an input file is specified, it will be used. Otherwise, "
+        "the bot will wait till a video track is published",
     )
     args_parser.add_argument(
-        "-d", '--debug',
-        action='store_true',
-        help="Enable debug mode"
+        "-d", "--debug", action="store_true", help="Enable debug mode"
     )
     args = args_parser.parse_args()
     if args.input_file and args.input_file != "" and os.path.exists(args.input_file):

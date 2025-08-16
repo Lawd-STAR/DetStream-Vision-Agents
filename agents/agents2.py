@@ -25,21 +25,6 @@ from agents.agents import (
 )
 
 
-class Processor(Protocol):
-    def start(self, data: Any) -> Any:
-        """Any initial setup"""
-        ...
-
-    def receive_audio(self):
-        pass
-
-    def receive_video(self):
-        pass
-
-    def state(self):
-        """return state for the llm"""
-        pass
-
 
 """
 TODO
@@ -442,6 +427,7 @@ class Agent:
                     )
 
                     # Forward to processors that want video
+                    #TODO: properly forward to image processors
                     await self._forward_video_to_processors(img, user)
 
                 except Exception as e:

@@ -20,19 +20,16 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-from getstream import Stream
-from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
-from stt import DeepgramSTT
-
-from processors.base_processor import ImageCapture, AudioLogger
-
 # Add parent directory to path so we can import our modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
+from getstream import Stream
 from getstream.models import UserRequest
-from getstream.stream import Stream
+from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.plugins.deepgram.stt import DeepgramSTT
+
+from processors.base_processor import ImageCapture, AudioLogger
 
 from utils import open_demo
 

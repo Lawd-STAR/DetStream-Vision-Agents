@@ -5,7 +5,7 @@ from typing import Protocol, Any, List
 from enum import Enum
 
 import aiortc
-from PIL.Image import Image
+from PIL import Image
 
 '''
 TODO:
@@ -75,17 +75,17 @@ def filter_processors(processors: List[BaseProcessor], processor_type: Processor
 
 
 class AudioVideoProcessor(BaseProcessor):
-    publish_audio = True
-    publish_video = True
+    publish_audio = False
+    publish_video = False
 
     def __init__(self, interval: int = 3, receive_audio: bool = False, receive_video: bool = True, *args, **kwargs):
         self.interval = interval
         self.last_process_time = 0
 
-        if self.publish_audio:
+        if self.publish_audio and hasattr(self, 'create_audio_track'):
             self.audio_track = self.create_audio_track()
 
-        if self.publish_video:
+        if self.publish_video and hasattr(self, 'create_video_track'):
             self.video_track = self.create_video_track()
 
     def state(self):
@@ -93,7 +93,7 @@ class AudioVideoProcessor(BaseProcessor):
         pass
 
     def create_audio_track(self):
-        return aiortc.AudioStreamTrack(framerate=24000, stereo=False, format="s16")
+        return aiortc.AudioStreamTrack()
 
 
 

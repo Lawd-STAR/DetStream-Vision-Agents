@@ -10,6 +10,7 @@ from getstream.video import rtc
 from getstream.video.rtc import audio_track
 from getstream.video.rtc.pb.stream.video.sfu.event import events_pb2
 from getstream.video.rtc.pb.stream.video.sfu.models import models_pb2
+from getstream.video.rtc.track_util import PcmData
 from getstream.video.rtc.tracks import (
     SubscriptionConfig,
     TrackSubscriptionConfig,
@@ -246,7 +247,7 @@ class Agent:
 
         # Handle audio data for STT or STS
         @self._connection.on("audio")
-        async def on_audio_received(pcm, user):
+        async def on_audio_received(pcm: PcmData, user):
             await self.reply_to_audio(pcm, user)
 
         # listen to video tracks if we have video or image processors
@@ -256,10 +257,11 @@ class Agent:
             async def on_track(track_id, track_type, user):
                 asyncio.create_task(self._process_track(track_id, track_type, user))
 
-    async def reply_to_audio(self, pcm_data, participant: models_pb2.Participant) -> None:
+    async def reply_to_audio(self, pcm_data: PcmData, participant: models_pb2.Participant) -> None:
         if participant and participant != self.agent_user.id:
             # first forward to processors
             try:
+                # TODO: remove this nonsense, we know its pcm
                 # Extract audio bytes for processors
                 audio_bytes = None
                 if hasattr(pcm_data, "samples"):

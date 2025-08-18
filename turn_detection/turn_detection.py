@@ -2,7 +2,6 @@ from typing import Optional, Dict, Any, Union, Callable, Protocol
 from dataclasses import dataclass
 from enum import Enum
 from pyee import EventEmitter
-from getstream.models import User
 from getstream.video.rtc.track_util import PcmData
 
 
@@ -22,7 +21,7 @@ class TurnEventData:
     """Data associated with a turn detection event."""
 
     timestamp: float
-    speaker: Optional[User] = None
+    speaker_id: Optional[str] = None #User id of the speaker who just finished speaking
     duration: Optional[float] = None
     confidence: Optional[float] = None  # confidence level of speaker detection
     audio_level: Optional[float] = None  # volume/energy level

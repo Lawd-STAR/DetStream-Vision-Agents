@@ -22,14 +22,13 @@ from getstream.video.rtc.tracks import (
 from agents.agents import (
     TransformedVideoTrack,
     PreProcessor,
-    TurnDetection,
     VideoTransformer,
     STT,
     TTS,
     LLM,
 )
 from processors.base_processor import filter_processors, ProcessorType
-from turn_detection import TurnEvent, TurnEventData
+from turn_detection import TurnEvent, TurnEventData, BaseTurnDetector
 
 class ReplyQueue:
     '''
@@ -81,7 +80,7 @@ class Agent:
         # setup stt, tts, and turn detection if not using realtime/sts
         stt: Optional[STT] = None,
         tts: Optional[TTS] = None,
-        turn_detection: Optional[TurnDetection] = None,
+        turn_detection: Optional[BaseTurnDetector] = None,
         # the agent's user info
         agent_user: Optional[User] = None,
         # for video agents. gather data at an interval
@@ -129,8 +128,8 @@ class Agent:
         if self.turn_detection:
             self.logger.info("🎙️ Setting up turn detection listeners")
             self.turn_detection.on(TurnEvent.TURN_STARTED.value, self._on_turn_started)
-
             self.turn_detection.on(TurnEvent.TURN_ENDED.value, self._on_turn_ended)
+            self.turn_detection.start()
 
     def setup_stt(self):
         if self.stt:
@@ -297,10 +296,9 @@ class Agent:
 
         # Handle audio data for STT or STS
         @self._connection.on("audio")
-
         async def on_audio_received(pcm: PcmData, user):
             if self.turn_detection:
-                await self.turn_detection.process_audio(pcm, user)
+                await self.turn_detection.process_audio(pcm, user.user_id)
 
             await self.reply_to_audio(pcm, user)
 
@@ -428,11 +426,11 @@ class Agent:
         """Handle when a participant starts their turn."""
         self.queue.pause()
         # todo(nash): If the participant starts speaking while TTS is streaming, we need to cancel it
-        self.logger.info(f"👉 Turn started - participant speaking {event_data.speaker}")
+        self.logger.info(f"👉 Turn started - participant speaking {event_data.speaker_id}")
 
     def _on_turn_ended(self, event_data: TurnEventData) -> None:
         """Handle when a participant ends their turn."""
-        self.logger.info(f"👉 Turn ended - agent may respond {event_data.duration}")
+        self.logger.info(f"👉 Turn ended - participant {event_data.speaker_id} finished (duration: {event_data.duration})")
 
     async def _on_partial_transcript(self, text: str, user=None, metadata=None):
         """Handle partial transcript from STT service."""

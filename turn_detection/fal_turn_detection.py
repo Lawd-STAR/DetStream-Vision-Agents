@@ -253,10 +253,9 @@ class FalTurnDetection(BaseTurnDetector):
             # Create event data
             event_data = TurnEventData(
                 timestamp=current_time,
-                speaker=None,  # We could create a User object here if needed
+                speaker_id=user_id,  # Now use the user_id directly
                 confidence=probability,
                 custom={
-                    "user_id": user_id,
                     "prediction": prediction,
                     "fal_result": result,
                 },
@@ -283,7 +282,7 @@ class FalTurnDetection(BaseTurnDetector):
                         # Previous speaker ended
                         prev_event_data = TurnEventData(
                             timestamp=current_time,
-                            custom={"user_id": self._current_speaker},
+                            speaker_id=self._current_speaker,
                         )
                         self._emit_turn_event(TurnEvent.TURN_ENDED, prev_event_data)
 

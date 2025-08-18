@@ -28,7 +28,7 @@ def open_demo(client, call_id) -> str:
 
     """Helper function to open browser with Stream call link."""
     base_url = f"{os.getenv('EXAMPLE_BASE_URL', 'https://getstream.io/video/demos')}/join/"
-    params = {"api_key": client.api_key, "token": token, "skip_lobby": "true"}
+    params = {"api_key": client.api_key, "token": token, "skip_lobby": "true", "video_encoder": "vp8", "bitrate": 2000000, "w": 1920, "h": 1080}
 
     url = f"{base_url}{call_id}?{urlencode(params)}"
     print(f"🌐 Opening browser to: {url}")

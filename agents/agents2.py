@@ -167,7 +167,7 @@ class Agent:
         return TrackSubscriptionConfig(
             track_types=[
                 TrackType.TRACK_TYPE_VIDEO,
-                #TrackType.TRACK_TYPE_AUDIO,
+                TrackType.TRACK_TYPE_AUDIO,
             ]
         )
 
@@ -305,10 +305,18 @@ class Agent:
             await self.reply_to_audio(pcm, user)
 
         # listen to video tracks if we have video or image processors
+        self.logger.info(
+            f"VDP: checking image and video processors %s %s", self.video_processors, self.image_processors
+        )
         if self.video_processors or self.image_processors:
-
+            self.logger.info(
+                f"VDP: ok image and video processors"
+            )
             @self._connection.on("track_added")
             async def on_track(track_id, track_type, user):
+                self.logger.info(
+                    f"VDP: on track"
+                )
                 asyncio.create_task(self._process_track(track_id, track_type, user))
 
     async def reply_to_audio(self, pcm_data: PcmData, participant: models_pb2.Participant) -> None:
@@ -355,7 +363,7 @@ class Agent:
     async def _process_track(self, track_id: str, track_type: str, participant):
         """Process video frames from a specific track."""
         self.logger.info(
-            f"🎥 Processing track: {track_id} from user {getattr(participant, 'user_id', 'unknown')} (type: {track_type})"
+            f"🎥VDP: Processing track: {track_id} from user {getattr(participant, 'user_id', 'unknown')} (type: {track_type})"
         )
         self.logger.info(f"🎥 Participant object: {participant}, type: {type(participant)}")
 
@@ -380,44 +388,41 @@ class Agent:
         hasImageProcessers = len(self.image_processors) > 0
         self.logger.info(f"📸 Has image processors: {hasImageProcessers}, count: {len(self.image_processors)}")
 
-        try:
-            self.logger.info(f"📸 Starting video processing loop for track {track_id} {participant.user_id} {participant.name}")
-            self.logger.info(f"📸 Track readyState: {getattr(track, 'readyState', 'unknown')}")
-            self.logger.info(f"📸 Track kind: {getattr(track, 'kind', 'unknown')}")
-            self.logger.info(f"📸 Track enabled: {getattr(track, 'enabled', 'unknown')}")
-            self.logger.info(f"📸 Track muted: {getattr(track, 'muted', 'unknown')}")
-            # Use the exact same pattern as the working example
-            while True:
-                try:
-                    self.logger.info(f"📸 Blocking on track.recv")
-                    video_frame = await asyncio.wait_for(track.recv(), timeout=5.0)
-                    if video_frame:
-                        self.logger.info(f"📸 Video frame received: {video_frame.time} - {video_frame.format}")
-                        
-                        if hasImageProcessers:
-                            img = video_frame.to_image()
-                            self.logger.info(f"📸 Converted to PIL Image: {img.size}")
-                            
-                            for processor in self.image_processors:
-                                try:
-                                    await processor.process_image(img, participant.user_id)
-                                except Exception as e:
-                                    self.logger.error(f"Error in image processor {type(processor).__name__}: {e}")
-                        
-                        # video processors
-                        for processor in self.video_processors:
+        self.logger.info(f"📸 Starting video processing loop for track {track_id} {participant.user_id} {participant.name}")
+        self.logger.info(f"📸 Track readyState: {getattr(track, 'readyState', 'unknown')}")
+        self.logger.info(f"📸 Track kind: {getattr(track, 'kind', 'unknown')}")
+        self.logger.info(f"📸 Track enabled: {getattr(track, 'enabled', 'unknown')}")
+        self.logger.info(f"📸 Track muted: {getattr(track, 'muted', 'unknown')}")
+        # Use the exact same pattern as the working example
+        while True:
+            try:
+                self.logger.info(f"📸 Blocking on track.recv")
+                video_frame = await asyncio.wait_for(track.recv(), timeout=5.0)
+                if video_frame:
+                    self.logger.info(f"📸 Video frame received: {video_frame.time} - {video_frame.format}")
+
+                    if hasImageProcessers:
+                        img = video_frame.to_image()
+                        self.logger.info(f"📸 Converted to PIL Image: {img.size}")
+
+                        for processor in self.image_processors:
                             try:
-                                await processor.process_video(track, participant.user_id)
+                                await processor.process_image(img, participant.user_id)
                             except Exception as e:
-                                self.logger.error(f"Error in video processor {type(processor).__name__}: {e}")
-                                
-                except Exception as e:
-                    # TODO: handle timouet differently, break on normal error
-                    self.logger.error(f"📸 Error receiving track: {e} - {type(e)}, trying again")
-                    await asyncio.sleep(0.5)
-        except Exception as e:
-            self.logger.error(f"Fatal error in track processing {track_id}: {e}")
-            self.logger.error(traceback.format_exc())
+                                self.logger.error(f"Error in image processor {type(processor).__name__}: {e}")
+
+                    # video processors
+                    for processor in self.video_processors:
+                        try:
+                            await processor.process_video(track, participant.user_id)
+                        except Exception as e:
+                            self.logger.error(f"Error in video processor {type(processor).__name__}: {e}")
+
+            except Exception as e:
+                # TODO: handle timouet differently, break on normal error
+                self.logger.error(f"📸 Error receiving track: {e} - {type(e)}, trying again")
+                await asyncio.sleep(0.5)
+
 
     def _on_turn_started(self, event_data: TurnEventData) -> None:
         """Handle when a participant starts their turn."""

@@ -5,6 +5,8 @@ from contextlib import nullcontext
 from typing import Optional, List, Protocol, Any
 from uuid import uuid4
 
+from matplotlib.pyplot import pause
+
 from getstream.models import User
 from getstream.video import rtc
 from getstream.video.rtc import audio_track
@@ -28,6 +30,39 @@ from agents.agents import (
 )
 from processors.base_processor import filter_processors, ProcessorType
 from turn_detection import TurnEvent, TurnEventData
+
+class ReplyQueue:
+    '''
+    When a user interrupts the LLM, there are a few different behaviours that should be supported.
+    1. Cancel/stop the audio playback, STT and LLM
+    2. Pause and resume. Update context. Maybe reply the same
+    3. Pause and refresh.
+
+    Generating a reply, should write on this queue
+    '''
+    def __init__(self, agent):
+        self.agent = agent
+
+    def pause(self):
+        # TODO: some audio fade
+        pass
+
+    async def resume(self, text):
+        # Some logic to either refresh (clear old) or simply resume
+        response = await self.agent.llm.generate(text)
+        await self.say_text(response)
+
+    def _clear(self):
+        pass
+
+    async def say_text(self, text):
+        # TODO: Stream and buffer
+        await self.agent.tts.send(text)
+
+    async def send_audio(self, pcm):
+        # TODO: stream & buffer
+        await self.agent._audio_track.send_audio(pcm)
+
 
 """
 TODO
@@ -81,6 +116,7 @@ class Agent:
         self.turn_detection = turn_detection
         self.processors = processors or []
         self.video_transformer = video_transformer
+        self.queue = ReplyQueue(self)
 
         # validation time
         self.validate_configuration()
@@ -93,7 +129,8 @@ class Agent:
         if self.turn_detection:
             self.logger.info("🎙️ Setting up turn detection listeners")
             self.turn_detection.on(TurnEvent.TURN_STARTED.value, self._on_turn_started)
-            self.turn_detection.on(TurnEvent.TURN_ENDED.value, self._on_turn_started)
+
+            self.turn_detection.on(TurnEvent.TURN_ENDED.value, self._on_turn_ended)
 
     def setup_stt(self):
         if self.stt:
@@ -106,18 +143,25 @@ class Agent:
             self._stt_setup = False
 
     async def say_text(self, text):
-        await self.tts.send(text)
+        await self.queue.say_text(self, text)
+
+
 
     async def play_audio(self, pcm):
-        self._audio_track.send_audio(pcm)
+        await self.queue.send_audio(pcm)
+
 
     async def reply_to_text(self, input_text: str):
         """
         Receive text (from a transcription, or user input)
         Run it through the LLM, get a response. And reply
         """
-        response = await self.llm.generate(input_text)
-        await self.say_text(response)
+
+        # TODO: Route through the queue
+        # Either resumse, pause, interrupt
+        await self.queue.resume(input_text) # TODO: how does this get access to context/conversation?
+
+
 
     def get_subscription_config(self):
         return TrackSubscriptionConfig(
@@ -377,6 +421,7 @@ class Agent:
 
     def _on_turn_started(self, event_data: TurnEventData) -> None:
         """Handle when a participant starts their turn."""
+        self.queue.pause()
         # todo(nash): If the participant starts speaking while TTS is streaming, we need to cancel it
         self.logger.info(f"👉 Turn started - participant speaking {event_data.speaker}")
 

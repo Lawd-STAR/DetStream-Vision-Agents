@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-from turn_detection import FalTurnDetection
-
 # Add parent directory to path so we can import our modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

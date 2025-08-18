@@ -17,7 +17,7 @@ from getstream import Stream
 from getstream.models import UserRequest
 from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.plugins.deepgram.stt import DeepgramSTT
-from turn_detection import FalTurnDetection
+from turn_detection import FalTurnDetection, TurnEvent
 
 from utils import open_demo
 

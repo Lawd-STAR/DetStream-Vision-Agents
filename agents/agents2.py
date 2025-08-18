@@ -22,14 +22,13 @@ from getstream.video.rtc.tracks import (
 from agents.agents import (
     TransformedVideoTrack,
     PreProcessor,
-    TurnDetection,
     VideoTransformer,
     STT,
     TTS,
     LLM,
 )
 from processors.base_processor import filter_processors, ProcessorType
-from turn_detection import TurnEvent, TurnEventData
+from turn_detection import TurnEvent, TurnEventData, BaseTurnDetector
 
 class ReplyQueue:
     '''
@@ -81,7 +80,7 @@ class Agent:
         # setup stt, tts, and turn detection if not using realtime/sts
         stt: Optional[STT] = None,
         tts: Optional[TTS] = None,
-        turn_detection: Optional[TurnDetection] = None,
+        turn_detection: Optional[BaseTurnDetector] = None,
         # the agent's user info
         agent_user: Optional[User] = None,
         # for video agents. gather data at an interval
@@ -129,8 +128,8 @@ class Agent:
         if self.turn_detection:
             self.logger.info("🎙️ Setting up turn detection listeners")
             self.turn_detection.on(TurnEvent.TURN_STARTED.value, self._on_turn_started)
-
             self.turn_detection.on(TurnEvent.TURN_ENDED.value, self._on_turn_ended)
+            self.turn_detection.start()
 
     def setup_stt(self):
         if self.stt:
@@ -297,10 +296,9 @@ class Agent:
 
         # Handle audio data for STT or STS
         @self._connection.on("audio")
-
         async def on_audio_received(pcm: PcmData, user):
             if self.turn_detection:
-                await self.turn_detection.process_audio(pcm, user)
+                await self.turn_detection.process_audio(pcm, user.user_id)
 
             await self.reply_to_audio(pcm, user)
 

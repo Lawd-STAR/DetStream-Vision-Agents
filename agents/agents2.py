@@ -421,11 +421,11 @@ class Agent:
         """Handle when a participant starts their turn."""
         self.queue.pause()
         # todo(nash): If the participant starts speaking while TTS is streaming, we need to cancel it
-        self.logger.info(f"👉 Turn started - participant speaking {event_data.speaker}")
+        self.logger.info(f"👉 Turn started - participant speaking {event_data.speaker_id}")
 
     def _on_turn_ended(self, event_data: TurnEventData) -> None:
         """Handle when a participant ends their turn."""
-        self.logger.info(f"👉 Turn ended - agent may respond {event_data.duration}")
+        self.logger.info(f"👉 Turn ended - participant {event_data.speaker_id} finished (duration: {event_data.duration})")
 
     async def _on_partial_transcript(self, text: str, user=None, metadata=None):
         """Handle partial transcript from STT service."""

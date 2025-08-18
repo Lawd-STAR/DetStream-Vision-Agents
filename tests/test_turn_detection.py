@@ -70,7 +70,7 @@ class StreamTurnDetector(BaseTurnDetector):
 
         event_data = TurnEventData(
             timestamp=time.time(),
-            speaker=user,
+            speaker_id=user.id,  # Use user.id instead of full user object
             confidence=kwargs.get("confidence", 0.9),
             audio_level=kwargs.get("audio_level", 0.7),
             duration=kwargs.get("duration"),
@@ -143,10 +143,7 @@ def use_any_detector(detector: TurnDetection) -> None:
     # Set up event listener using decorator syntax
     @detector.on("speech_started")
     def on_speech(event_data: TurnEventData) -> None:
-        if event_data.speaker and event_data.speaker.custom:
-            speaker_name = event_data.speaker.custom.get("name", "Unknown")
-        else:
-            speaker_name = "Unknown"
+        speaker_name = event_data.speaker_id if event_data.speaker_id else "Unknown"
         print(f"Detected speech from {speaker_name}")
 
     detector.start()
@@ -320,7 +317,7 @@ class TestStreamTurnDetector:
 
         assert len(events_received) == 1
         event = events_received[0]
-        assert event.speaker.id == "test-user"
+        assert event.speaker_id == "test-user"
         assert event.confidence == 0.95
         assert event.audio_level == 0.8
         assert event.duration == 1.5
@@ -423,7 +420,7 @@ class TestProtocolCompatibility:
         # Simulate an event to test the listener
         stream_detector.simulate_speech_event("test-user", TurnEvent.SPEECH_STARTED)
         captured = capsys.readouterr()
-        assert "Detected speech from User test-user" in captured.out
+        assert "Detected speech from test-user" in captured.out
 
     def test_use_any_detector_with_simple_detector(self, capsys):
         """Test that SimpleTurnDetector works with use_any_detector function."""
@@ -471,7 +468,7 @@ class TestTurnEventData:
         """Test TurnEventData with minimal required fields."""
         event_data = TurnEventData(timestamp=1234567890.0)
         assert event_data.timestamp == 1234567890.0
-        assert event_data.speaker is None
+        assert event_data.speaker_id is None
         assert event_data.duration is None
         assert event_data.confidence is None
         assert event_data.audio_level is None
@@ -489,14 +486,14 @@ class TestTurnEventData:
         )
         event_data = TurnEventData(
             timestamp=1234567890.0,
-            speaker=user,
+            speaker_id=user.id,
             duration=2.5,
             confidence=0.95,
             audio_level=0.7,
             custom={"key": "value"},
         )
         assert event_data.timestamp == 1234567890.0
-        assert event_data.speaker == user
+        assert event_data.speaker_id == user.id
         assert event_data.duration == 2.5
         assert event_data.confidence == 0.95
         assert event_data.audio_level == 0.7

@@ -19,8 +19,8 @@ from getstream import Stream
 from getstream.models import UserRequest
 from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.plugins.deepgram.stt import DeepgramSTT
+from turn_detection import FalTurnDetection
 
-from processors.base_processor import ImageCapture, AudioLogger
 from utils import open_demo
 
 from models import OpenAILLM
@@ -40,8 +40,15 @@ async def main() -> None:
     # Initialize Stream client
     client: Stream = Stream.from_env()
     open_ai_key = os.getenv("OPENAI_API_KEY")
+    turn_detection = FalTurnDetection(
+        buffer_duration=3.0,  # Process 3 seconds of audio at a time
+        prediction_threshold=0.7,  # Higher threshold for more confident detections
+        mini_pause_duration=0.5,
+        max_pause_duration=2.0,
+    )
 
-    # Create the agent with multiple processors
+
+# Create the agent with multiple processors
     agent_user = UserRequest(id=str(uuid4()), name="My happy AI friend")
     agent = Agent(
         llm=OpenAILLM(
@@ -50,7 +57,7 @@ async def main() -> None:
         ),
         tts=ElevenLabsTTS(),
         stt=DeepgramSTT(),
-        turn_detection=FalTurnDetection(),
+        turn_detection=turn_detection,
         agent_user=agent_user,
     )
 

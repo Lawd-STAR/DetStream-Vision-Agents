@@ -26,8 +26,7 @@ from agents.agents import (
     LLM,
 )
 from processors.base_processor import filter_processors, ProcessorType
-
-
+from turn_detection import TurnEvent, TurnEventData
 
 """
 TODO
@@ -87,6 +86,13 @@ class Agent:
         self.prepare_rtc()
         self.setup_stt()
         self.create_user()
+        self.setup_turn_detection()
+
+    def setup_turn_detection(self):
+        if self.turn_detection:
+            self.logger.info("🎙️ Setting up turn detection listeners")
+            self.turn_detection.on(TurnEvent.TURN_STARTED.value, self._on_turn_started)
+            self.turn_detection.on(TurnEvent.TURN_ENDED.value, self._on_turn_started)
 
     def setup_stt(self):
         if self.stt:
@@ -195,7 +201,7 @@ class Agent:
 
                 # Send initial greeting, if the LLM is configured to do so
                 if self.llm:
-                    await self.llm.conversation_started(self)
+                    self.llm.conversation_started(self)
 
                 # Keep the agent running and listening
                 self.logger.info("🎧 Agent is active - press Ctrl+C to stop")
@@ -247,6 +253,9 @@ class Agent:
         # Handle audio data for STT or STS
         @self._connection.on("audio")
         async def on_audio_received(pcm, user):
+            if self.turn_detection:
+                await self.turn_detection.process_audio(pcm, user)
+
             await self.reply_to_audio(pcm, user)
 
         # listen to video tracks if we have video or image processors
@@ -363,6 +372,14 @@ class Agent:
             self.logger.error(f"Fatal error in track processing {track_id}: {e}")
             self.logger.error(traceback.format_exc())
 
+    def _on_turn_started(self, event_data: TurnEventData) -> None:
+        """Handle when a participant starts their turn."""
+        # todo(nash): If the participant starts speaking while TTS is streaming, we need to cancel it
+        self.logger.info(f"👉 Turn started - participant speaking {event_data.speaker}")
+
+    def _on_turn_ended(self, event_data: TurnEventData) -> None:
+        """Handle when a participant ends their turn."""
+        self.logger.info(f"👉 Turn ended - agent may respond {event_data.duration}")
 
     async def _on_partial_transcript(self, text: str, user=None, metadata=None):
         """Handle partial transcript from STT service."""
@@ -430,6 +447,12 @@ class Agent:
                 self.logger.warning(
                     "STS mode detected: STT and TTS services will be ignored. "
                     "The STS model handles both speech-to-text and text-to-speech internally."
+                )
+                # STS mode - should not have separate STT/TTS
+            if self.stt or self.turn_detection:
+                self.logger.warning(
+                    "STS mode detected: STT, TTS and Turn Detection services will be ignored. "
+                    "The STS model handles both speech-to-text, text-to-speech and turn detection internally."
                 )
         else:
             # Traditional mode - need LLM and either STT/TTS or both
@@ -532,6 +555,11 @@ class Agent:
                 await self.tts.close()
         except Exception as e:
             self.logger.debug(f"Error closing TTS: {e}")
+        try:
+            if self.turn_detection and hasattr(self.turn_detection, "stop"):
+                self.turn_detection.stop()
+        except Exception as e:
+                self.logger.debug(f"Error closing turn detection: {e}")
 
         try:
             if self._audio_track and hasattr(self._audio_track, "stop"):

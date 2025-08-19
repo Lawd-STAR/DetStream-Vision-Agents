@@ -185,10 +185,9 @@ class Agent:
         self.call = call
         self.channel = None
         # TODO: I don't know the human user at this point in the code...
-        chatClient: ChatClient = call._client.chat
-        self.channel = chatClient.get_or_create_channel("videocall", call.id, data=ChannelInput(created_by_id=self.agent_user.id))
-        self.conversation = Conversation([], self.channel)
-        self.conversation.chatClient = chatClient
+        chat_client: ChatClient = call._client.chat
+        self.channel = chat_client.get_or_create_channel("videocall", call.id, data=ChannelInput(created_by_id=self.agent_user.id))
+        self.conversation = Conversation([], self.channel.data.channel, chat_client)
 
         """Join a Stream video call."""
         if self._is_running:

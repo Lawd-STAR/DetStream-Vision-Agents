@@ -9,7 +9,7 @@ from matplotlib.pyplot import pause
 
 import getstream
 from getstream.chat.client import ChatClient
-from getstream.models import User, Message, ChannelInput, MessageRequest
+from getstream.models import User, Message, ChannelInput, MessageRequest, ChannelResponse, MessageResponse
 from getstream.video import rtc
 from getstream.video.call import Call
 from getstream.video.rtc import audio_track
@@ -30,6 +30,7 @@ from agents.agents import (
     TTS,
     LLM,
 )
+from agents.conversation import Conversation
 from processors.base_processor import filter_processors, ProcessorType
 from turn_detection import TurnEvent, TurnEventData, BaseTurnDetector
 
@@ -54,7 +55,7 @@ class ReplyQueue:
     async def resume(self, text):
         # Some logic to either refresh (clear old) or simply resume
         response = await self.agent.llm.generate(text)
-        self.agent.conversation.add_message(text)
+        self.agent.conversation.add_message(text, self.agent.agent_user.id)
 
         # TODO: streaming here to update messages
 
@@ -79,46 +80,6 @@ TODO
 - User a better pcm_data alternative. https://github.com/GetStream/stream-py/blob/webrtc/getstream/video/rtc/track_util.py#L17
 - Yolo integration (like https://github.com/GetStream/video-ai-samples/blob/ab4913a6e07301de50f83e4bf2b7b376a375af99/live_sports_coach/kickboxing_example.py#L369)
 """
-
-class Conversation:
-    '''
-
-    TODO:
-    - stream-py support async
-    - stream-py have a method to get a channel for a call
-    - say text needs more data (type and author)
-    '''
-    messages: List[Message]
-    last_message: Optional[Message]
-    channel : ChannelInput
-    chatClient : ChatClient
-
-    def __init__(self, messages: List[Message], channel):
-        self.messages = messages
-        self.channel = channel
-        self.channel_id = self.channel.data.channel.id
-        self.channel_type = self.channel.data.channel.type
-
-    def add_message(self, input_text):
-        message = MessageRequest(text=input_text, user_id=self.agent.agent_user.id)
-        self.messages.append(message)
-        self.chatClient.send_message(self.channel_type, self.channel_id, message).data.message
-
-    def finish_last_message(self):
-        self.last_message = None
-
-    def update_last_message(self, input_text, user):
-        # When the user is speaking, or when the
-        print("partial update message from tts", input_text)
-        if self.last_message is None:
-            message = MessageRequest(text=input_text, user_id="test", type="mytype")
-            response = self.chatClient.send_message(self.channel_type, self.channel_id, message).data.message
-
-            self.last_message = response
-        else:
-            self.last_message.text += input_text
-            # TODO: send update here
-
 
 
 class Agent:
@@ -204,7 +165,7 @@ class Agent:
         Receive text (from a transcription, or user input)
         Run it through the LLM, get a response. And reply
         """
-        self.conversation.add_message(input_text)
+        self.conversation.add_message(input_text, self.agent_user.id)
 
         # TODO: Route through the queue
         # Either resumse, pause, interrupt
@@ -493,7 +454,7 @@ class Agent:
     async def _on_partial_transcript(self, text: str, user=None, metadata=None):
         """Handle partial transcript from STT service."""
         if text and text.strip():
-            self.conversation.partial_update_message(text,user)
+            self.conversation.partial_update_message(text, user)
             user_info = user.user_id if user and hasattr(user, "user_id") else "unknown"
             self.logger.debug(f"🎤 [{user_info}] (partial): {text}")
 

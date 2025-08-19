@@ -62,7 +62,7 @@ async def main() -> None:
         tts=ElevenLabsTTS(),
         stt=DeepgramSTT(),
         agent_user=agent_user,
-        processors=[image_capture, audio_logger],  # Multiple interval processors
+        processors=[],  # Multiple interval processors
     )
 
     client.upsert_users(UserRequest(id=agent_user.id, name=agent_user.name))
@@ -70,6 +70,7 @@ async def main() -> None:
     try:
         # Join the call - this is the main functionality we're demonstrating
         call = client.video.call("default", str(uuid4()))
+        call._client = client
         open_demo(client, call.id)
         await agent.join(call)
 

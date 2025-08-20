@@ -233,3 +233,8 @@ pytest tests/test_models.py -v
 MIT License - see [LICENSE](LICENSE) file for details.
 
 
+## Observability
+
+- Traces and metrics go to Prometheus and OpenTelemetry
+- Metrics on performance of TTS, STT, LLM, Turn detection and connection to realtime edge.
+- Integration with external LLM observability solutions

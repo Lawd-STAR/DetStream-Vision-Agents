@@ -40,6 +40,16 @@ from agents.agents2 import Agent
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
+'''
+TODO cleanup:
+- right types on agent user and LLM
+- stream should be a Transport or similar
+- small CLI wrapper
+- wait till call ended
+- metrics...
+'''
+
+
 async def main() -> None:
     """Create a simple agent and join a call."""
 
@@ -77,8 +87,9 @@ async def main() -> None:
         # Keep the agent running
         logging.info("🤖 Agent has joined the call. Press Ctrl+C to exit.")
 
-        while True:
-            await asyncio.sleep(1)
+        await agent.finish()
+
+
 
     except KeyboardInterrupt:
         logging.info("👋 Shutting down agent...")

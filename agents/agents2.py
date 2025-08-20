@@ -7,7 +7,7 @@ from uuid import uuid4
 
 
 from getstream.chat.client import ChatClient
-from getstream.models import User, ChannelInput
+from getstream.models import User, ChannelInput, UserRequest
 from getstream.video import rtc
 from getstream.video.call import Call
 from getstream.video.rtc import audio_track
@@ -91,7 +91,7 @@ class Agent:
         tts: Optional[TTS] = None,
         turn_detection: Optional[BaseTurnDetector] = None,
         # the agent's user info
-        agent_user: Optional[User] = None,
+        agent_user: Optional[UserRequest] = None,
         # for video agents. gather data at an interval
         # - roboflow/ yolo typically run continuously
         # - often combined with API calls to fetch stats etc
@@ -709,3 +709,8 @@ class Agent:
     def create_user(self):
         """Create user - placeholder for any user setup logic."""
         pass
+
+    async def finish(self):
+        #self.call.on("call.ended")
+        while True:
+            await asyncio.sleep(1)

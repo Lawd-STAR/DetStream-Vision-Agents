@@ -33,13 +33,14 @@ class Conversation:
         self.messages.append(message)
         self._send_message(message)
 
-    def finish_last_message(self):
+    def finish_last_message(self, text: str):
         """Mark the last message as finished (not generating)."""
         if self.last_message:
+            self.last_message.text = text
             self.chat_client.update_message_partial(
                 self.last_message.id,
                 user_id=self.last_message.user.id,
-                set={"text": self.last_message.text, "generating": False}
+                set={"text": text, "generating": False}
             )
             self.last_message = None
 

@@ -15,6 +15,7 @@ from getstream.video.call import Call
 from getstream.video.rtc import audio_track
 from getstream.video.rtc.pb.stream.video.sfu.event import events_pb2
 from getstream.video.rtc.pb.stream.video.sfu.models import models_pb2
+from getstream.video.rtc.pb.stream.video.sfu.models.models_pb2 import Participant
 from getstream.video.rtc.track_util import PcmData
 from getstream.video.rtc.tracks import (
     SubscriptionConfig,
@@ -55,7 +56,7 @@ class ReplyQueue:
     async def resume(self, text):
         # Some logic to either refresh (clear old) or simply resume
         response = await self.agent.llm.generate(text)
-        self.agent.conversation.add_message(text, self.agent.agent_user.id)
+        self.agent.conversation.add_message(response, self.agent.agent_user.id)
 
         # TODO: streaming here to update messages
 
@@ -160,12 +161,12 @@ class Agent:
         await self.queue.send_audio(pcm)
 
 
-    async def reply_to_text(self, input_text: str):
+    async def reply_to_text(self, input_text: str, participant: Participant):
         """
         Receive text (from a transcription, or user input)
         Run it through the LLM, get a response. And reply
         """
-        self.conversation.add_message(input_text, self.agent_user.id)
+        self.conversation.add_message(input_text, participant.user_id)
 
         # TODO: Route through the queue
         # Either resumse, pause, interrupt
@@ -450,28 +451,26 @@ class Agent:
         """Handle when a participant ends their turn."""
         self.logger.info(f"👉 Turn ended - participant {event_data.speaker_id} finished (duration: {event_data.duration})")
 
-    async def _on_partial_transcript(self, text: str, user=None, metadata=None):
+    async def _on_partial_transcript(self, text: str, participant: Participant =None, metadata=None):
         """Handle partial transcript from STT service."""
         if text and text.strip():
-            self.conversation.partial_update_message(text, user)
-            user_info = user.user_id if user and hasattr(user, "user_id") else "unknown"
+            self.conversation.partial_update_message(text, participant)
             self.logger.debug(f"🎤 [{user_info}] (partial): {text}")
 
-    async def _on_transcript(self, text: str, user=None, metadata=None):
+    async def _on_transcript(self, text: str, participant: Participant =None, metadata=None):
         """Handle final transcript from STT service."""
         if text and text.strip():
-            user_info = user.user_id if user and hasattr(user, "user_id") else "unknown"
-            self.logger.info(f"🎤 [{user_info}]: {text}")
+            self.conversation.finish_last_message(text)
 
             # Process transcription through LLM and respond
-            await self._process_transcription(text, user)
+            await self._process_transcription(text, participant)
 
     async def _on_stt_error(self, error):
         """Handle STT service errors."""
         self.logger.error(f"❌ STT Error: {error}")
 
-    async def _process_transcription(self, text: str, user=None) -> None:
-        await self.reply_to_text(text)
+    async def _process_transcription(self, text: str, participant: Participant=None) -> None:
+        await self.reply_to_text(text, participant)
 
     @property
     def sts_mode(self) -> bool:

@@ -1,0 +1,491 @@
+"""
+YOLO Pose Detection Processor
+
+This processor implements real-time pose detection using YOLO models,
+extracting the pose detection logic from the kickboxing example and
+adapting it to the new processor architecture.
+"""
+
+import asyncio
+import logging
+import numpy as np
+import cv2
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, Dict, Any
+from PIL import Image
+
+from .base_processor import (
+    AudioVideoProcessor,
+    ImageProcessorMixin,
+    VideoProcessorMixin,
+    VideoPublisherMixin,
+)
+
+# Optional YOLO import with fallback
+try:
+    from ultralytics import YOLO
+
+    YOLO_AVAILABLE = True
+except ImportError:
+    YOLO_AVAILABLE = False
+    YOLO = None
+
+logger = logging.getLogger(__name__)
+
+
+class YOLOPoseProcessor(
+    AudioVideoProcessor, ImageProcessorMixin, VideoProcessorMixin, VideoPublisherMixin
+):
+    """
+    YOLO-based pose detection processor that can:
+    1. Process images with pose detection overlays
+    2. Process video tracks with real-time pose detection
+    3. Publish transformed video with pose annotations
+    """
+
+    def __init__(
+        self,
+        model_path: str = "yolo11n-pose.pt",
+        conf_threshold: float = 0.5,
+        imgsz: int = 512,
+        device: str = "cpu",
+        max_workers: int = 2,
+        interval: int = 0,
+        enable_hand_tracking: bool = True,
+        enable_wrist_highlights: bool = True,
+        *args,
+        **kwargs,
+    ):
+        """
+        Initialize the YOLO Pose Processor.
+
+        Args:
+            model_path: Path to YOLO pose model file
+            conf_threshold: Confidence threshold for pose detection
+            imgsz: Image size for YOLO inference
+            device: Device to run inference on ('cpu' or 'cuda')
+            max_workers: Number of worker threads for processing
+            interval: Processing interval in seconds (0 for every frame)
+            enable_hand_tracking: Whether to draw detailed hand connections
+            enable_wrist_highlights: Whether to highlight wrist positions
+        """
+        super().__init__(
+            interval=interval, receive_audio=False, receive_video=True, *args, **kwargs
+        )
+
+        if not YOLO_AVAILABLE:
+            raise ImportError(
+                "ultralytics package is required for YOLOPoseProcessor. "
+                "Install it with: pip install ultralytics"
+            )
+
+        self.model_path = model_path
+        self.conf_threshold = conf_threshold
+        self.imgsz = imgsz
+        self.device = device
+        self.enable_hand_tracking = enable_hand_tracking
+        self.enable_wrist_highlights = enable_wrist_highlights
+
+        # Initialize YOLO model
+        self._load_model()
+
+        # Thread pool for CPU-intensive pose processing
+        self.executor = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="yolo_pose_processor"
+        )
+        self._shutdown = False
+
+        # Video track for publishing (if used as video publisher)
+        self._video_track = None
+
+        logger.info(f"🤖 YOLO Pose Processor initialized with model: {model_path}")
+
+    def _load_model(self):
+        """Load the YOLO pose model."""
+        try:
+            # Check if model file exists
+            if not Path(self.model_path).exists():
+                logger.warning(
+                    f"Model file {self.model_path} not found. YOLO will download it automatically."
+                )
+
+            self.pose_model = YOLO(self.model_path)
+            self.pose_model.to(self.device)
+            logger.info(
+                f"✅ YOLO pose model loaded: {self.model_path} on {self.device}"
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to load YOLO model: {e}")
+            raise
+
+    def create_video_track(self):
+        """Create a video track for publishing pose-annotated frames."""
+        from agents.agents import TransformedVideoTrack
+
+        self._video_track = TransformedVideoTrack()
+        logger.info("🎥 YOLO pose video track created for publishing")
+        return self._video_track
+
+    async def process_image(
+        self, image: Image.Image, user_id: str, metadata: dict = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Process a single image with pose detection.
+
+        Args:
+            image: PIL Image to process
+            user_id: ID of the user
+            metadata: Additional metadata
+
+        Returns:
+            Dictionary containing pose detection results and annotated image
+        """
+        if not self.should_process():
+            return None
+
+        try:
+            # Convert PIL to numpy array
+            frame_array = np.array(image)
+
+            # Process pose detection
+            annotated_array, pose_data = await self._process_pose_async(frame_array)
+
+            # Convert back to PIL Image
+            annotated_image = Image.fromarray(annotated_array)
+
+            logger.debug(f"🤖 Processed pose detection for user {user_id}")
+
+            return {
+                "annotated_image": annotated_image,
+                "pose_data": pose_data,
+                "user_id": user_id,
+                "timestamp": asyncio.get_event_loop().time(),
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Error processing image pose detection: {e}")
+            return None
+
+    async def process_video(self, track, user_id: str):
+        """
+        Process video frames from the input track with pose detection.
+
+        Args:
+            track: Video track to process
+            user_id: ID of the user
+        """
+        logger.info(f"🤖 Starting YOLO pose processing for user {user_id}")
+
+        try:
+            frame_count = 0
+            while True:
+                try:
+                    # Receive video frame from input track
+                    video_frame = await track.recv()
+                    if not video_frame:
+                        continue
+
+                    # Convert to PIL Image
+                    img = video_frame.to_image()
+                    logger.debug(f"Processing pose frame {frame_count}: {img.size}")
+
+                    # Process with pose detection
+                    frame_array = np.array(img)
+                    annotated_array, pose_data = await self._process_pose_async(
+                        frame_array
+                    )
+                    annotated_image = Image.fromarray(annotated_array)
+
+                    # Publish annotated frame to output track if available
+                    if self._video_track:
+                        await self._video_track.add_frame(annotated_image)
+
+                    frame_count += 1
+
+                except Exception as e:
+                    if "Connection closed" in str(e) or "Track ended" in str(e):
+                        logger.info(f"🔌 Video track ended for user {user_id}")
+                        break
+                    else:
+                        logger.error(f"❌ Error processing video frame: {e}")
+                        await asyncio.sleep(0.1)  # Brief pause before retry
+
+        except Exception as e:
+            logger.error(f"❌ Fatal error in YOLO pose video processing: {e}")
+
+    async def _process_pose_async(
+        self, frame_array: np.ndarray
+    ) -> tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Async wrapper for pose processing.
+
+        Args:
+            frame_array: Input frame as numpy array
+
+        Returns:
+            Tuple of (annotated_frame_array, pose_data)
+        """
+        loop = asyncio.get_event_loop()
+
+        try:
+            # Add timeout to prevent blocking
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    self.executor, self._process_pose_sync, frame_array
+                ),
+                timeout=2.0,  # 2 second timeout
+            )
+            return result
+        except asyncio.TimeoutError:
+            logger.warning("Pose processing timed out, returning original frame")
+            return frame_array, {}
+        except Exception as e:
+            logger.error(f"Error in async pose processing: {e}")
+            return frame_array, {}
+
+    def _process_pose_sync(
+        self, frame_array: np.ndarray
+    ) -> tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Synchronous pose processing for thread pool.
+        Based on the kickboxing example's pose detection logic.
+
+        Args:
+            frame_array: Input frame as numpy array
+
+        Returns:
+            Tuple of (annotated_frame_array, pose_data)
+        """
+        try:
+            if self._shutdown:
+                return frame_array, {}
+
+            # Store original dimensions for quality preservation
+            original_height, original_width = frame_array.shape[:2]
+
+            # Run pose detection
+            pose_results = self.pose_model(
+                frame_array,
+                verbose=False,
+                imgsz=self.imgsz,
+                conf=self.conf_threshold,
+                device=self.device,
+            )
+
+            if not pose_results:
+                return frame_array, {}
+
+            # Apply pose results to current frame
+            annotated_frame = frame_array.copy()
+            pose_data = {"persons": []}
+
+            # Process each detected person
+            for person_idx, result in enumerate(pose_results):
+                if not result.keypoints:
+                    continue
+
+                keypoints = result.keypoints
+                if keypoints is not None and len(keypoints.data) > 0:
+                    kpts = keypoints.data[0].cpu().numpy()  # Get person's keypoints
+
+                    # Store pose data
+                    person_data = {
+                        "person_id": person_idx,
+                        "keypoints": kpts.tolist(),
+                        "confidence": float(np.mean(kpts[:, 2])),  # Average confidence
+                    }
+                    pose_data["persons"].append(person_data)
+
+                    # Draw keypoints
+                    for i, (x, y, conf) in enumerate(kpts):
+                        if conf > self.conf_threshold:  # Only draw confident keypoints
+                            cv2.circle(
+                                annotated_frame, (int(x), int(y)), 5, (0, 255, 0), -1
+                            )
+
+                    # Draw skeleton connections
+                    self._draw_skeleton_connections(annotated_frame, kpts)
+
+                    # Highlight wrist positions if enabled
+                    if self.enable_wrist_highlights:
+                        self._highlight_wrists(annotated_frame, kpts)
+
+            return annotated_frame, pose_data
+
+        except Exception as e:
+            logger.error(f"Error in pose processing: {e}")
+            return frame_array, {}
+
+    def _draw_skeleton_connections(self, annotated_frame: np.ndarray, kpts: np.ndarray):
+        """
+        Draw skeleton connections on the annotated frame.
+        Based on the kickboxing example's connection logic.
+        """
+        # Basic skeleton connections
+        connections = [
+            (0, 1),
+            (0, 2),
+            (1, 3),
+            (2, 4),  # Head connections
+            (5, 6),
+            (5, 7),
+            (7, 9),
+            (6, 8),
+            (8, 10),  # Arm connections
+            (5, 11),
+            (6, 12),
+            (11, 12),  # Torso connections
+            (11, 13),
+            (13, 15),
+            (12, 14),
+            (14, 16),  # Leg connections
+        ]
+
+        # Enhanced hand and wrist connections for detailed tracking
+        if self.enable_hand_tracking:
+            hand_connections = [
+                # Right hand connections
+                (9, 15),
+                (15, 16),
+                (16, 17),
+                (17, 18),
+                (18, 19),  # Right hand thumb
+                (9, 20),
+                (20, 21),
+                (21, 22),
+                (22, 23),
+                (23, 24),  # Right hand index
+                (9, 25),
+                (25, 26),
+                (26, 27),
+                (27, 28),
+                (28, 29),  # Right hand middle
+                (9, 30),
+                (30, 31),
+                (31, 32),
+                (32, 33),
+                (33, 34),  # Right hand ring
+                (9, 35),
+                (35, 36),
+                (36, 37),
+                (37, 38),
+                (38, 39),  # Right hand pinky
+                # Left hand connections (if available)
+                (8, 45),
+                (45, 46),
+                (46, 47),
+                (47, 48),
+                (48, 49),  # Left hand thumb
+                (8, 50),
+                (50, 51),
+                (51, 52),
+                (52, 53),
+                (53, 54),  # Left hand index
+                (8, 55),
+                (55, 56),
+                (56, 57),
+                (57, 58),
+                (58, 59),  # Left hand middle
+                (8, 60),
+                (60, 61),
+                (61, 62),
+                (62, 63),
+                (63, 64),  # Left hand ring
+                (8, 65),
+                (65, 66),
+                (66, 67),
+                (67, 68),
+                (68, 69),  # Left hand pinky
+            ]
+            connections.extend(hand_connections)
+
+        # Draw connections
+        for start_idx, end_idx in connections:
+            if start_idx < len(kpts) and end_idx < len(kpts):
+                x1, y1, c1 = kpts[start_idx]
+                x2, y2, c2 = kpts[end_idx]
+                if c1 > self.conf_threshold and c2 > self.conf_threshold:
+                    # Use different colors for different body parts
+                    if start_idx >= 9 and start_idx <= 39:  # Right hand
+                        color = (0, 255, 255)  # Cyan for right hand
+                    elif start_idx >= 40 and start_idx <= 69:  # Left hand
+                        color = (255, 255, 0)  # Yellow for left hand
+                    else:  # Main body
+                        color = (255, 0, 0)  # Blue for main skeleton
+                    cv2.line(
+                        annotated_frame,
+                        (int(x1), int(y1)),
+                        (int(x2), int(y2)),
+                        color,
+                        2,
+                    )
+
+    def _highlight_wrists(self, annotated_frame: np.ndarray, kpts: np.ndarray):
+        """
+        Highlight wrist positions with special markers.
+        Based on the kickboxing example's wrist highlighting logic.
+        """
+        wrist_keypoints = [9, 10]  # Right and left wrists
+        for wrist_idx in wrist_keypoints:
+            if wrist_idx < len(kpts):
+                x, y, conf = kpts[wrist_idx]
+                if conf > self.conf_threshold:
+                    # Draw larger, more visible wrist markers
+                    cv2.circle(
+                        annotated_frame, (int(x), int(y)), 8, (0, 0, 255), -1
+                    )  # Red wrist markers
+                    cv2.circle(
+                        annotated_frame, (int(x), int(y)), 10, (255, 255, 255), 2
+                    )  # White outline
+
+                    # Add wrist labels
+                    wrist_label = "R Wrist" if wrist_idx == 9 else "L Wrist"
+                    cv2.putText(
+                        annotated_frame,
+                        wrist_label,
+                        (int(x) + 15, int(y) - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (255, 255, 255),
+                        2,
+                    )
+                    cv2.putText(
+                        annotated_frame,
+                        wrist_label,
+                        (int(x) + 15, int(y) - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 0, 0),
+                        1,
+                    )
+
+    def state(self) -> Dict[str, Any]:
+        """
+        Return current processor state for LLM context.
+
+        Returns:
+            Dictionary containing processor state information
+        """
+        return {
+            "processor_type": "YOLO Pose Detection",
+            "model_path": self.model_path,
+            "confidence_threshold": self.conf_threshold,
+            "device": self.device,
+            "hand_tracking_enabled": self.enable_hand_tracking,
+            "wrist_highlights_enabled": self.enable_wrist_highlights,
+            "processing_interval": self.interval,
+            "status": "active" if not self._shutdown else "shutdown",
+        }
+
+    def cleanup(self):
+        """Clean up resources."""
+        self._shutdown = True
+        if hasattr(self, "executor"):
+            self.executor.shutdown(wait=False)
+        logger.info("🧹 YOLO Pose Processor cleaned up")
+
+    def __del__(self):
+        """Destructor to ensure cleanup."""
+        if hasattr(self, "_shutdown") and not self._shutdown:
+            self.cleanup()

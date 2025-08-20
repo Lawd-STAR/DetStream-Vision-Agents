@@ -2,14 +2,12 @@ import asyncio
 import logging
 import traceback
 from contextlib import nullcontext
-from typing import Optional, List, Protocol, Any
+from typing import Optional, List, Any
 from uuid import uuid4
 
-from matplotlib.pyplot import pause
 
-import getstream
 from getstream.chat.client import ChatClient
-from getstream.models import User, Message, ChannelInput, MessageRequest, ChannelResponse, MessageResponse
+from getstream.models import User, ChannelInput
 from getstream.video import rtc
 from getstream.video.call import Call
 from getstream.video.rtc import audio_track
@@ -26,7 +24,6 @@ from getstream.video.rtc.tracks import (
 from agents.agents import (
     TransformedVideoTrack,
     PreProcessor,
-    VideoTransformer,
     STT,
     TTS,
     LLM,
@@ -35,8 +32,9 @@ from agents.conversation import Conversation
 from processors.base_processor import filter_processors, ProcessorType
 from turn_detection import TurnEvent, TurnEventData, BaseTurnDetector
 
+
 class ReplyQueue:
-    '''
+    """
     When a user interrupts the LLM, there are a few different behaviours that should be supported.
     1. Cancel/stop the audio playback, STT and LLM
     2. Pause and resume. Update context. Maybe reply the same
@@ -45,7 +43,8 @@ class ReplyQueue:
     Generating a reply, should write on this queue
 
 
-    '''
+    """
+
     def __init__(self, agent):
         self.agent = agent
 
@@ -121,7 +120,6 @@ class Agent:
         self.tts = tts
         self.turn_detection = turn_detection
         self.processors = processors or []
-        self.video_transformer = video_transformer
         self.queue = ReplyQueue(self)
 
         # validation time
@@ -151,24 +149,22 @@ class Agent:
     async def say_text(self, text):
         await self.queue.say_text(self, text)
 
-
-
     async def play_audio(self, pcm):
         await self.queue.send_audio(pcm)
-
 
     async def reply_to_text(self, input_text: str, participant: Participant):
         """
         Receive text (from a transcription, or user input)
         Run it through the LLM, get a response. And reply
         """
-        self.conversation.add_message(input_text, participant.user_id)
+        if self.conversation:
+            self.conversation.add_message(input_text, participant.user_id)
 
         # TODO: Route through the queue
         # Either resumse, pause, interrupt
-        await self.queue.resume(input_text) # TODO: how does this get access to context/conversation?
-
-
+        await self.queue.resume(
+            input_text
+        )  # TODO: how does this get access to context/conversation?
 
     def get_subscription_config(self):
         return TrackSubscriptionConfig(
@@ -181,10 +177,18 @@ class Agent:
     async def join(self, call: Call) -> None:
         self.call = call
         self.channel = None
-        # TODO: I don't know the human user at this point in the code...
-        chat_client: ChatClient = call._client.chat
-        self.channel = chat_client.get_or_create_channel("videocall", call.id, data=ChannelInput(created_by_id=self.agent_user.id))
-        self.conversation = Conversation([], self.channel.data.channel, chat_client)
+        self.conversation = None
+
+        # Only set up chat if we have LLM (for conversation capabilities)
+        if self.llm:
+            # TODO: I don't know the human user at this point in the code...
+            chat_client: ChatClient = call.client.chat
+            self.channel = chat_client.get_or_create_channel(
+                "videocall",
+                call.id,
+                data=ChannelInput(created_by_id=self.agent_user.id),
+            )
+            self.conversation = Conversation([], self.channel.data.channel, chat_client)
 
         """Join a Stream video call."""
         if self._is_running:
@@ -230,7 +234,6 @@ class Agent:
                     await connection.add_tracks(video=self._video_track)
 
                     self.logger.debug("🎥 Agent ready to publish video")
-
 
                 # Set up STS audio forwarding if in STS mode
                 if self.sts_mode and self._sts_connection:
@@ -292,10 +295,7 @@ class Agent:
         # Handle new participants joining
         async def on_track_published(event: events_pb2.TrackPublished):
             try:
-
-                self.logger.info(
-                    f"📢 Track published: {event}"
-                )
+                self.logger.info(f"📢 Track published: {event}")
             except Exception as e:
                 self.logger.error(f"❌ Error handling track published event: {e}")
                 self.logger.error(traceback.format_exc())
@@ -319,20 +319,21 @@ class Agent:
 
         # listen to video tracks if we have video or image processors
         self.logger.info(
-            f"VDP: checking image and video processors %s %s", self.video_processors, self.image_processors
+            "VDP: checking image and video processors %s %s",
+            self.video_processors,
+            self.image_processors,
         )
         if self.video_processors or self.image_processors:
-            self.logger.info(
-                f"VDP: ok image and video processors"
-            )
+            self.logger.info("VDP: ok image and video processors")
+
             @self._connection.on("track_added")
             async def on_track(track_id, track_type, user):
-                self.logger.info(
-                    f"VDP: on track"
-                )
+                self.logger.info("VDP: on track")
                 asyncio.create_task(self._process_track(track_id, track_type, user))
 
-    async def reply_to_audio(self, pcm_data: PcmData, participant: models_pb2.Participant) -> None:
+    async def reply_to_audio(
+        self, pcm_data: PcmData, participant: models_pb2.Participant
+    ) -> None:
         if participant and participant != self.agent_user.id:
             # first forward to processors
             try:
@@ -378,7 +379,9 @@ class Agent:
         self.logger.info(
             f"🎥VDP: Processing track: {track_id} from user {getattr(participant, 'user_id', 'unknown')} (type: {track_type})"
         )
-        self.logger.info(f"🎥 Participant object: {participant}, type: {type(participant)}")
+        self.logger.info(
+            f"🎥 Participant object: {participant}, type: {type(participant)}"
+        )
 
         # Only process video tracks - track_type might be numeric (2 for video)
         if track_type != "video":
@@ -392,27 +395,37 @@ class Agent:
         if not track:
             self.logger.error(f"❌ Failed to subscribe to track: {track_id}")
             return
-        
-        self.logger.info(f"✅ Successfully subscribed to video track: {track_id}, track object: {track}")
+
+        self.logger.info(
+            f"✅ Successfully subscribed to video track: {track_id}, track object: {track}"
+        )
 
         # Give the track a moment to be ready
         await asyncio.sleep(0.5)
 
         hasImageProcessers = len(self.image_processors) > 0
-        self.logger.info(f"📸 Has image processors: {hasImageProcessers}, count: {len(self.image_processors)}")
+        self.logger.info(
+            f"📸 Has image processors: {hasImageProcessers}, count: {len(self.image_processors)}"
+        )
 
-        self.logger.info(f"📸 Starting video processing loop for track {track_id} {participant.user_id} {participant.name}")
-        self.logger.info(f"📸 Track readyState: {getattr(track, 'readyState', 'unknown')}")
+        self.logger.info(
+            f"📸 Starting video processing loop for track {track_id} {participant.user_id} {participant.name}"
+        )
+        self.logger.info(
+            f"📸 Track readyState: {getattr(track, 'readyState', 'unknown')}"
+        )
         self.logger.info(f"📸 Track kind: {getattr(track, 'kind', 'unknown')}")
         self.logger.info(f"📸 Track enabled: {getattr(track, 'enabled', 'unknown')}")
         self.logger.info(f"📸 Track muted: {getattr(track, 'muted', 'unknown')}")
         # Use the exact same pattern as the working example
         while True:
             try:
-                self.logger.info(f"📸 Blocking on track.recv")
+                self.logger.info("📸 Blocking on track.recv")
                 video_frame = await asyncio.wait_for(track.recv(), timeout=5.0)
                 if video_frame:
-                    self.logger.info(f"📸 Video frame received: {video_frame.time} - {video_frame.format}")
+                    self.logger.info(
+                        f"📸 Video frame received: {video_frame.time} - {video_frame.format}"
+                    )
 
                     if hasImageProcessers:
                         img = video_frame.to_image()
@@ -422,41 +435,56 @@ class Agent:
                             try:
                                 await processor.process_image(img, participant.user_id)
                             except Exception as e:
-                                self.logger.error(f"Error in image processor {type(processor).__name__}: {e}")
+                                self.logger.error(
+                                    f"Error in image processor {type(processor).__name__}: {e}"
+                                )
 
                     # video processors
                     for processor in self.video_processors:
                         try:
                             await processor.process_video(track, participant.user_id)
                         except Exception as e:
-                            self.logger.error(f"Error in video processor {type(processor).__name__}: {e}")
+                            self.logger.error(
+                                f"Error in video processor {type(processor).__name__}: {e}"
+                            )
 
             except Exception as e:
                 # TODO: handle timouet differently, break on normal error
-                self.logger.error(f"📸 Error receiving track: {e} - {type(e)}, trying again")
+                self.logger.error(
+                    f"📸 Error receiving track: {e} - {type(e)}, trying again"
+                )
                 await asyncio.sleep(0.5)
-
 
     def _on_turn_started(self, event_data: TurnEventData) -> None:
         """Handle when a participant starts their turn."""
         self.queue.pause()
         # todo(nash): If the participant starts speaking while TTS is streaming, we need to cancel it
-        self.logger.info(f"👉 Turn started - participant speaking {event_data.speaker_id}")
+        self.logger.info(
+            f"👉 Turn started - participant speaking {event_data.speaker_id}"
+        )
 
     def _on_turn_ended(self, event_data: TurnEventData) -> None:
         """Handle when a participant ends their turn."""
-        self.logger.info(f"👉 Turn ended - participant {event_data.speaker_id} finished (duration: {event_data.duration})")
+        self.logger.info(
+            f"👉 Turn ended - participant {event_data.speaker_id} finished (duration: {event_data.duration})"
+        )
 
-    async def _on_partial_transcript(self, text: str, participant: Participant =None, metadata=None):
+    async def _on_partial_transcript(
+        self, text: str, participant: Participant = None, metadata=None
+    ):
         """Handle partial transcript from STT service."""
         if text and text.strip():
-            self.conversation.partial_update_message(text, participant)
-            self.logger.debug(f"🎤 [{user_info}] (partial): {text}")
+            if self.conversation:
+                self.conversation.partial_update_message(text, participant)
+            self.logger.debug(f"🎤 [partial]: {text}")
 
-    async def _on_transcript(self, text: str, participant: Participant =None, metadata=None):
+    async def _on_transcript(
+        self, text: str, participant: Participant = None, metadata=None
+    ):
         """Handle final transcript from STT service."""
         if text and text.strip():
-            self.conversation.finish_last_message(text)
+            if self.conversation:
+                self.conversation.finish_last_message(text)
 
             # Process transcription through LLM and respond
             await self._process_transcription(text, participant)
@@ -465,7 +493,9 @@ class Agent:
         """Handle STT service errors."""
         self.logger.error(f"❌ STT Error: {error}")
 
-    async def _process_transcription(self, text: str, participant: Participant=None) -> None:
+    async def _process_transcription(
+        self, text: str, participant: Participant = None
+    ) -> None:
         await self.reply_to_text(text, participant)
 
     @property
@@ -484,10 +514,7 @@ class Agent:
 
     @property
     def publish_video(self) -> bool:
-        if self.video_publishers is not None:
-            return True
-        else:
-            return False
+        return len(self.video_publishers) > 0
 
     @property
     def audio_processors(self) -> List[Any]:
@@ -530,12 +557,22 @@ class Agent:
                     "The STS model handles both speech-to-text, text-to-speech and turn detection internally."
                 )
         else:
-            # Traditional mode - need LLM and either STT/TTS or both
-            if not self.llm:
-                raise ValueError("LLM is required for traditional mode")
-            if not self.stt and not self.tts:
+            # Traditional mode - check if we have audio processing or just video processing
+            has_audio_processing = self.stt or self.tts or self.turn_detection
+            has_video_processing = any(
+                hasattr(p, "process_video") or hasattr(p, "process_image")
+                for p in self.processors
+            )
+
+            if has_audio_processing and not self.llm:
                 raise ValueError(
-                    "At least one of STT or TTS is required for traditional mode"
+                    "LLM is required when using audio processing (STT/TTS/Turn Detection)"
+                )
+
+            # Allow video-only mode without LLM
+            if not has_audio_processing and not has_video_processing:
+                raise ValueError(
+                    "At least one processing capability (audio or video) is required"
                 )
 
     def prepare_rtc(self):
@@ -555,10 +592,19 @@ class Agent:
             if self.tts:
                 self.tts.set_output_track(self._audio_track)
 
-        # Set up video track if video transformer is available
+        # Set up video track if video publishers are available
         if self.publish_video:
-            self._video_track = TransformedVideoTrack()
-            self.logger.info("🎥 Video track initialized for transformation publishing")
+            # Get the first video publisher to create the track
+            video_publisher = self.video_publishers[0]
+            if hasattr(video_publisher, "create_video_track"):
+                self._video_track = video_publisher.create_video_track()
+                self.logger.info("🎥 Video track initialized from video publisher")
+            else:
+                # Fallback to TransformedVideoTrack
+                from agents.agents import TransformedVideoTrack
+
+                self._video_track = TransformedVideoTrack()
+                self.logger.info("🎥 Video track initialized with fallback")
 
     async def _setup_sts_audio_forwarding(self, sts_connection, rtc_connection):
         """Set up audio forwarding from STS connection to WebRTC connection."""
@@ -634,7 +680,7 @@ class Agent:
             if self.turn_detection and hasattr(self.turn_detection, "stop"):
                 self.turn_detection.stop()
         except Exception as e:
-                self.logger.debug(f"Error closing turn detection: {e}")
+            self.logger.debug(f"Error closing turn detection: {e}")
 
         try:
             if self._audio_track and hasattr(self._audio_track, "stop"):

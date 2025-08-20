@@ -78,7 +78,6 @@ class ReplyQueue:
 TODO
 - Screenshot integration (once a second). Somehow video doesn't work. not sure why
 - Reduce logging verbosity
-- User a better pcm_data alternative. https://github.com/GetStream/stream-py/blob/webrtc/getstream/video/rtc/track_util.py#L17
 - Yolo integration (like https://github.com/GetStream/video-ai-samples/blob/ab4913a6e07301de50f83e4bf2b7b376a375af99/live_sports_coach/kickboxing_example.py#L369)
 """
 
@@ -99,9 +98,6 @@ class Agent:
         # - often combined with API calls to fetch stats etc
         # - state from each processor is passed to the LLM
         processors: Optional[List[PreProcessor]] = None,
-        # transformers dont keep state/ aren't relevant for the LLM
-        # just for applying sound or video effects
-        video_transformer: Optional[VideoTransformer] = None,
     ):
         # Create agent user if not provided
         if agent_user is None:
@@ -488,7 +484,7 @@ class Agent:
 
     @property
     def publish_video(self) -> bool:
-        if self.video_transformer is not None:
+        if self.video_publishers is not None:
             return True
         else:
             return False
@@ -502,6 +498,16 @@ class Agent:
     def video_processors(self) -> List[Any]:
         """Get processors that can process video."""
         return filter_processors(self.processors, ProcessorType.VIDEO)
+
+    @property
+    def video_publishers(self) -> List[Any]:
+        """Get processors that can process video."""
+        return filter_processors(self.processors, ProcessorType.VIDEO_PUBLISHER)
+
+    @property
+    def audio_publishers(self) -> List[Any]:
+        """Get processors that can process video."""
+        return filter_processors(self.processors, ProcessorType.AUDIO_PUBLISHER)
 
     @property
     def image_processors(self) -> List[Any]:

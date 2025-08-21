@@ -22,7 +22,12 @@ dependencies = [
     "numpy>=1.24.0",
     "ultralytics>=8.3.0",
     "opencv-python>=4.8.0",
+    "click>=8.0.0",
 ]
+
+[project.scripts]
+stream-agents = "cli:cli"
+
 [tool.uv.workspace]
 members = [
     "getstream/plugins/*",

@@ -182,7 +182,7 @@ class Agent:
         # Only set up chat if we have LLM (for conversation capabilities)
         if self.llm:
             # TODO: I don't know the human user at this point in the code...
-            chat_client: ChatClient = call.client.chat
+            chat_client: ChatClient = call._client.chat
             self.channel = chat_client.get_or_create_channel(
                 "videocall",
                 call.id,
@@ -711,11 +711,21 @@ class Agent:
         pass
 
     async def finish(self):
-        fut = asyncio.get_event_loop().create_future()
+        """Wait for the call to end gracefully."""
+        # If connection is None or already closed, return immediately
+        if not self._connection:
+            logging.info("🔚 Agent connection already closed, finishing immediately")
+            return
+        
+        try:
+            fut = asyncio.get_event_loop().create_future()
 
-        @self._connection.on("call_ended")
-        def on_ended():
-            if not fut.done():
-                fut.set_result(None)
+            @self._connection.on("call_ended")
+            def on_ended():
+                if not fut.done():
+                    fut.set_result(None)
 
-        await fut
+            await fut
+        except Exception as e:
+            logging.warning(f"⚠️ Error while waiting for call to end: {e}")
+            # Don't raise the exception, just log it and continue cleanup

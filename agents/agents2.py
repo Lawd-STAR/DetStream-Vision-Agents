@@ -711,6 +711,11 @@ class Agent:
         pass
 
     async def finish(self):
-        #self.call.on("call.ended")
-        while True:
-            await asyncio.sleep(1)
+        fut = asyncio.get_event_loop().create_future()
+
+        @self._connection.on("call_ended")
+        def on_ended():
+            if not fut.done():
+                fut.set_result(None)
+
+        await fut

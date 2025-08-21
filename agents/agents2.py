@@ -5,7 +5,7 @@ from contextlib import nullcontext
 from typing import Optional, List, Any
 from uuid import uuid4
 
-
+from edge.edge_transport import EdgeTransport, StreamEdge
 from getstream.chat.client import ChatClient
 from getstream.models import User, ChannelInput, UserRequest
 from getstream.video import rtc
@@ -84,6 +84,8 @@ TODO
 class Agent:
     def __init__(
         self,
+        # edge network for video & audio
+        edge: Optional[EdgeTransport] = None,
         # llm, optionally with sts capabilities
         llm: Optional[LLM] = None,
         # setup stt, tts, and turn detection if not using realtime/sts
@@ -98,6 +100,9 @@ class Agent:
         # - state from each processor is passed to the LLM
         processors: Optional[List[PreProcessor]] = None,
     ):
+        if edge is None:
+            edge = StreamEdge()
+        self.edge = edge
         # Create agent user if not provided
         if agent_user is None:
             agent_id = f"agent-{uuid4()}"
@@ -124,9 +129,9 @@ class Agent:
 
         # validation time
         self.validate_configuration()
+
         self.prepare_rtc()
         self.setup_stt()
-        self.create_user()
         self.setup_turn_detection()
 
     def setup_turn_detection(self):

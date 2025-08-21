@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
+from edge.edge_transport import StreamEdge
+
 # Add parent directory to path so we can import our modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -39,12 +41,12 @@ async def main() -> None:
 
     load_dotenv()
 
-    # Initialize Stream client
-    client: Stream = Stream.from_env()
+
 
     # Create the agent with multiple processors
     agent_user = UserRequest(id=str(uuid4()), name="My happy AI friend")
     agent = Agent(
+        edge=StreamEdge(),
         llm=OpenAILLM(
             name="gpt-4o",
             instructions="You're a voice AI assistant. Keep responses short and conversational. Don't use special characters or formatting. Be friendly and helpful.",

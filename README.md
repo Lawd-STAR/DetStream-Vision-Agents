@@ -220,13 +220,25 @@ pytest tests/test_models.py -v
 - 🔄 Advanced observability and metrics
 - 🔄 Production deployment guides
 
-## 🤝 Contributing
+## 🤝 Dev Guidelines
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass: `pytest`
-5. Submit a pull request
+### Light wrapping
+
+AI is changing daily. This makes it important to use light wrapping. IE
+
+```python
+tts = ElevenLabsTTS(client=ElevenLabsClient())
+```
+
+Note how the ElevenLabsTTS handles standardization.
+But if the init for ElevenLabsClient changes, nothing breaks.
+If features are added to the client, you can use them easily via tts.client
+
+### Typing
+
+Avoid using Union types or complicated composite types.
+Keep typing simple. Use the PcmAudio type instead of bytes when passing around audio.
+This prevents mistakes related to different audio formats. 
 
 ## 📄 License
 

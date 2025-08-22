@@ -1,24 +1,23 @@
-#!/usr/bin/env python3
-"""
-"""
-
 import asyncio
 import logging
-import os
 import sys
 from pathlib import Path
 from uuid import uuid4
 
+from turn_detection import FalTurnDetection
+
 # Add parent directory to path so we can import our modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from edge.edge_transport import StreamEdge
 
 from dotenv import load_dotenv
 from getstream import Stream
 from getstream.models import UserRequest
 from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.plugins.deepgram.stt import DeepgramSTT
-from turn_detection import FalTurnDetection, TurnEvent
 
+from processors.base_processor import ImageCapture, AudioLogger
 from utils import open_demo
 
 from models import OpenAILLM
@@ -26,7 +25,8 @@ from models import OpenAILLM
 # Import the new Agent class from agents2.py
 from agents.agents2 import Agent
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
+# Import the CLI dispatcher
+from cli import start_dispatcher
 
 
 
@@ -35,9 +35,12 @@ async def main() -> None:
 
     load_dotenv()
 
-    # Initialize Stream client
-    client: Stream = Stream.from_env()
-    open_ai_key = os.getenv("OPENAI_API_KEY")
+    # TODO this user creation flow is ugly.
+    agent_user = UserRequest(id=str(uuid4()), name="My happy AI friend")
+    client = Stream.from_env()
+    client.upsert_users(UserRequest(id=agent_user.id, name=agent_user.name))
+
+    # Create the agent
     turn_detection = FalTurnDetection(
         buffer_duration=3.0,  # Process 3 seconds of audio at a time
         prediction_threshold=0.7,  # Higher threshold for more confident detections
@@ -45,48 +48,41 @@ async def main() -> None:
         max_pause_duration=2.0,
     )
 
-
-# Create the agent with multiple processors
-    agent_user = UserRequest(id=str(uuid4()), name="My happy AI friend")
+    # TODO: LLM class
     agent = Agent(
+        edge=StreamEdge(), # low latency edge. clients for React, iOS, Android, RN, Flutter etc.
+        agent_user=agent_user, # the user name etc for the agent
+        # tts, llm, stt more. see the realtime example for sts
         llm=OpenAILLM(
             name="gpt-4o",
             instructions="You're a voice AI assistant. Keep responses short and conversational. Don't use special characters or formatting. Be friendly and helpful.",
         ),
         tts=ElevenLabsTTS(),
         stt=DeepgramSTT(),
+        # turn keeping
         turn_detection=turn_detection,
-        agent_user=agent_user,
+        # processors can fetch extra data, check images/audio data or transform video
+        processors=[],
     )
 
-    client.upsert_users(UserRequest(id=agent_user.id, name=agent_user.name))
+
+
 
     try:
         # Join the call - this is the main functionality we're demonstrating
         call = client.video.call("default", str(uuid4()))
-        open_demo(client, call.id)
-        await agent.join(call)
+        # Open the demo env
+        open_demo(call)
 
-        # Keep the agent running
+        # have the agent join a call/room
+        await agent.join(call)
         logging.info("🤖 Agent has joined the call. Press Ctrl+C to exit.")
 
-        while True:
-            await asyncio.sleep(1)
-
-    except KeyboardInterrupt:
-        logging.info("👋 Shutting down agent...")
-    except Exception as e:
-        logging.error("❌ Error: %s", e)
+        # run till the call is ended
+        await agent.finish()
     finally:
-        # Clean up agent resources
-        if "agent" in locals():
-            try:
-                await agent.close()
-                logging.info("✅ Agent cleanup completed")
-            except Exception as e:
-                logging.error(f"❌ Error during cleanup: {e}")
-
+        await agent.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(start_dispatcher(main, log_level="DEBUG"))

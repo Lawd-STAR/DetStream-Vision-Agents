@@ -1,7 +1,7 @@
 """
 Model Protocol
 
-This module defines the Model protocol interface for AI models used in Stream Agents.
+This module defines the Model protocol interface for AI llm used in Stream Agents.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from abc import abstractmethod
 
 class Model(Protocol):
     """
-    Protocol for AI models used in Stream Agents.
+    Protocol for AI llm used in Stream Agents.
 
     This protocol defines the interface that all AI model implementations
     must follow to be compatible with the Agent system.

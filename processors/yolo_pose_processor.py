@@ -1,7 +1,7 @@
 """
 YOLO Pose Detection Processor
 
-This processor implements real-time pose detection using YOLO models,
+This processor implements real-time pose detection using YOLO llm,
 extracting the pose detection logic from the kickboxing example and
 adapting it to the new processor architecture.
 """

@@ -1,5 +1,5 @@
 """
-Tests for the models package.
+Tests for the llm package.
 """
 
 import pytest
@@ -46,7 +46,7 @@ class TestOpenAIModel:
         assert model.client == mock_client
         assert model.is_async is False  # Mock is not AsyncOpenAI
 
-    @patch("models.openai.AsyncOpenAI")
+    @patch("llm.openai.AsyncOpenAI")
     def test_openai_model_initialization_with_api_key(self, mock_async_openai):
         """Test OpenAI model initialization with API key."""
         mock_client = Mock()

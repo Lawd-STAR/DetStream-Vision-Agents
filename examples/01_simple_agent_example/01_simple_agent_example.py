@@ -1,15 +1,6 @@
 import asyncio
 import logging
-import sys
-from pathlib import Path
 from uuid import uuid4
-
-from turn_detection import FalTurnDetection
-
-# Add parent directory to path so we can import our modules
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from edge.edge_transport import StreamEdge
 
 from dotenv import load_dotenv
 from getstream import Stream
@@ -17,15 +8,13 @@ from getstream.models import UserRequest
 from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.plugins.deepgram.stt import DeepgramSTT
 
+# Import project modules - these should be run from the project root
+from turn_detection import FalTurnDetection
+from edge.edge_transport import StreamEdge
 from processors.base_processor import ImageCapture, AudioLogger
 from utils import open_demo
-
-from models import OpenAILLM
-
-# Import the new Agent class from agents2.py
-from agents.agents2 import Agent
-
-# Import the CLI dispatcher
+from llm import OpenAILLM
+from agents.agents import Agent
 from cli import start_dispatcher
 
 

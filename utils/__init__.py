@@ -12,11 +12,14 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 from getstream.models import UserRequest
+from getstream.video.call import Call
 
 from start_with_live_game import logger
 
 
-def open_demo(client, call_id) -> str:
+def open_demo(call: Call) -> str:
+    client = call.client.stream
+
     # Create a human user for testing
     human_id = f"user-{uuid4()}"
 
@@ -30,7 +33,7 @@ def open_demo(client, call_id) -> str:
     base_url = f"{os.getenv('EXAMPLE_BASE_URL', 'https://getstream.io/video/demos')}/join/"
     params = {"api_key": client.api_key, "token": token, "skip_lobby": "true", "video_encoder": "vp8", "bitrate": 2000000, "w": 1920, "h": 1080}
 
-    url = f"{base_url}{call_id}?{urlencode(params)}"
+    url = f"{base_url}{call.id}?{urlencode(params)}"
     print(f"🌐 Opening browser to: {url}")
 
     try:

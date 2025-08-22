@@ -6,6 +6,13 @@ from getstream import Stream
 
 
 class EdgeTransport:
+    '''
+    To normalize
+
+    - join method
+    - call/room object
+    - open demo/ browser
+    '''
     pass
 
 

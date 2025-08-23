@@ -1,15 +1,13 @@
-from openai import api_keyfrom openai import api_key
-
 # Open Agents by Stream
 
-Low latency video and voice AI agents on [Stream's edge network](https://getstream.io/video/).
+Low latency video (and voice) AI agents on [Stream's edge network](https://getstream.io/video/).
 
 * Average time to join: 500ms
 * 95% percentile audio transport latency: 30ms
 
+Open Agent library. Goal is to support most of our video/audio competitors. (See adding support section)
 SDKs for React, Android, iOS, Flutter, React, React Native and Unity.
-Open Agent library, support for most of our video/audio competitors as well.
-If you prefer Twilio, Cloudflare, Antmedia or Mediasoup you're welcome to use those.
+
 
 ## 🚀 Features
 

@@ -1,12 +1,10 @@
-import asyncio
 import os
 import pytest
 from uuid import uuid4
-from typing import List
 
 from dotenv import load_dotenv
 from getstream import Stream
-from getstream.models import Message, MessageRequest, ChannelResponse, MessageResponse, UserRequest
+from getstream.models import UserRequest
 
 from agents.conversation import Conversation
 

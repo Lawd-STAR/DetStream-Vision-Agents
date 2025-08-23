@@ -1,13 +1,14 @@
 [project]
 name = "simple-agents-example"
 version = "0.0.0"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 
 # put only what this example needs
 dependencies = [
   "python-dotenv>=1.0",
   "getstream[webrtc]==2.3.0a3",
+  "stream-agents",
 ]
 
 [tool.uv.sources]
-agents = {path = "../../../stream-agents", editable=true}
+"stream-agents" = {path = "../../stream-agents", editable=true}

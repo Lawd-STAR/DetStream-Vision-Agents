@@ -23,3 +23,6 @@ lib/*
 shell.nix
 pyrightconfig.json
 .DS_Store
+
+*.egg-info/
+*.egg

@@ -14,8 +14,9 @@ from uuid import uuid4
 from getstream.models import UserRequest
 from getstream.video.call import Call
 
-from start_with_live_game import logger
+import logging
 
+logger = logging.getLogger(__name__)
 
 def open_demo(call: Call) -> str:
     client = call.client.stream

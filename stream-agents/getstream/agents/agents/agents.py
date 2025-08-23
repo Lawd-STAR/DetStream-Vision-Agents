@@ -5,8 +5,9 @@ from contextlib import nullcontext
 from typing import Optional, List, Any
 from uuid import uuid4
 
-from agents.reply_queue import ReplyQueue
-from edge.edge_transport import EdgeTransport, StreamEdge
+from getstream.plugins.common import TTS, STT
+from .reply_queue import ReplyQueue
+from ..edge.edge_transport import EdgeTransport, StreamEdge
 from getstream.chat.client import ChatClient
 from getstream.models import User, ChannelInput, UserRequest
 from getstream.video import rtc
@@ -22,17 +23,9 @@ from getstream.video.rtc.tracks import (
     TrackType,
 )
 
-from agents.agents import (
-    TransformedVideoTrack,
-    PreProcessor,
-    STT,
-    TTS,
-    LLM,
-)
-from agents.conversation import Conversation
-from processors.base_processor import filter_processors, ProcessorType
-from turn_detection import TurnEvent, TurnEventData, BaseTurnDetector
-
+from .conversation import Conversation
+from ..processors.base_processor import filter_processors, ProcessorType, BaseProcessor
+from ..turn_detection import TurnEvent, TurnEventData, BaseTurnDetector
 
 
 
@@ -42,7 +35,7 @@ class Agent:
         # edge network for video & audio
         edge: Optional[EdgeTransport] = None,
         # llm, optionally with sts capabilities
-        llm: Optional[LLM] = None,
+        llm: Optional[Any] = None,
         # setup stt, tts, and turn detection if not using realtime/sts
         stt: Optional[STT] = None,
         tts: Optional[TTS] = None,
@@ -53,7 +46,7 @@ class Agent:
         # - roboflow/ yolo typically run continuously
         # - often combined with API calls to fetch stats etc
         # - state from each processor is passed to the LLM
-        processors: Optional[List[PreProcessor]] = None,
+        processors: Optional[List[BaseProcessor]] = None,
     ):
         if edge is None:
             edge = StreamEdge()
@@ -561,7 +554,6 @@ class Agent:
                 self.logger.info("🎥 Video track initialized from video publisher")
             else:
                 # Fallback to TransformedVideoTrack
-                from agents.agents import TransformedVideoTrack
 
                 self._video_track = TransformedVideoTrack()
                 self.logger.info("🎥 Video track initialized with fallback")

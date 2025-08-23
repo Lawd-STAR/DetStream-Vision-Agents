@@ -27,11 +27,3 @@ dependencies = [
 
 [project.scripts]
 stream-agents = "cli:cli"
-
-[tool.uv.workspace]
-members = [
-    "getstream/plugins/*",
-    "getstream/video"
-]
-#[tool.uv.sources]
-#getstream = {path = "../stream-py", editable=true}

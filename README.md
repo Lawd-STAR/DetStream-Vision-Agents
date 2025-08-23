@@ -8,20 +8,21 @@ Low latency video (and voice) AI agents on [Stream's edge network](https://getst
 Open Agent library. Goal is to support most of our video/audio competitors. (See adding support section)
 SDKs for React, Android, iOS, Flutter, React, React Native and Unity.
 
-
 ## 🚀 Features
 
-- ✅ **Low Latency**: Built for real-time video interactions
-- ✅ **AI-Powered**: OpenAI GPT integration with extensible model system
-- ✅ **Voice & Vision**: Support for speech-to-text, text-to-speech, and computer vision
-- ✅ **Extensible**: Plugin architecture for tools, pre-processors, and AI services
-- ✅ **Production Ready**: Comprehensive testing, error handling, and observability
+- ✅ **Low Latency**: Quickly join (500ms) and fast audio latency (30ms)
+- ✅ **Video AI**: Built for real-time video AI
+- ✅ **Open**: Built by Stream, but use any video edge network that you like
+
+## Examples
+
+
 
 ## 📦 Installation
 
 ```bash
 # Install dependencies using uv
-uv add openai python-dotenv getstreamt
+uv add openai python-dotenv getstream
 
 # Or with pip
 pip install openai python-dotenv getstream
@@ -206,17 +207,10 @@ pytest tests/test_models.py -v
 
 ## 🛣️ Roadmap
 
-- ✅ Agent framework with protocol-based architecture
-- ✅ OpenAI model integration
-- ✅ Tools and pre-processors system
-- ✅ Stream video call integration
-- ✅ Comprehensive testing
-- 🔄 Speech-to-text integration
-- 🔄 Turn detection system
-- 🔄 Memory and context management
-- 🔄 Additional model providers (Anthropic, Cohere, etc.)
-- 🔄 Advanced observability and metrics
-- 🔄 Production deployment guides
+
+## Competitors & Partners
+
+Reach out to nash@getstream.io, and we'll collaborate on getting you added
 
 ## 🤝 Dev Guidelines
 
@@ -238,13 +232,21 @@ Avoid using Union types or complicated composite types.
 Keep typing simple. Use the PcmAudio type instead of bytes when passing around audio.
 This prevents mistakes related to different audio formats. 
 
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
 
 ## Observability
 
 - Traces and metrics go to Prometheus and OpenTelemetry
 - Metrics on performance of TTS, STT, LLM, Turn detection and connection to realtime edge.
 - Integration with external LLM observability solutions
+
+## Inspiration
+
+- Livekit Agents: Great syntax, Livekit only
+- Pipecat: Flexible, but more verbose. Open, we will add support for Stream
+- OpenAI Agents: Focused on openAI only, but we will try to add support
+
+## Stream Agents or Proxy
+
+The proxy mode which handles the openAI/Stream connection is a good option if you don't need to run any additional AI models.
+If all you need is low latency integration between stream and openAI, that's a good option.
+It's available for JS & Python.

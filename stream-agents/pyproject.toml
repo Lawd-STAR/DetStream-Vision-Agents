@@ -24,6 +24,3 @@ dependencies = [
     "opencv-python>=4.8.0",
     "click>=8.0.0",
 ]
-
-[project.scripts]
-stream-agents = "cli:cli"

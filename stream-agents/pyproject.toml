@@ -1,9 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "stream-agents"
 version = "0.1.0"
-description = "Add your description here"
+description = "Open video agents. Build low latency video and voice agents on any realtime edge network."
 readme = "README.md"
-requires-python = ">=3.12"
+keywords = ["video AI", "AI", "voice AI", "video agents", "voice agents", "agents", "AI"]
+
+requires-python = ">=3.13"
 dependencies = [
     "getstream[webrtc]==2.3.0a3",
     "getstream-plugins-elevenlabs>=0.1.0",
@@ -24,3 +30,22 @@ dependencies = [
     "opencv-python>=4.8.0",
     "click>=8.0.0",
 ]
+
+[project.urls]
+Documentation = "https://getstream.io/video/docs/python-ai/"
+Website = "https://getstream.io/video/voice-agents/"
+Source = "https://github.com/getstream/stream-agents"
+
+[project.optional-dependencies]
+dev = ["pytest", "mypy", "ruff"]
+xai = ["stream-agents-xai"]
+
+
+[tool.hatch.version]
+path = "stream-agents/getstream/agents/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["stream-agents"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/stream-agents"]

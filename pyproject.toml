@@ -6,4 +6,12 @@
 stream-agents = { workspace = true }
 
 [tool.uv.workspace]
-members = ["stream-agents"]
+members = ["stream-agents", "plugins/*"]
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "python-dotenv",
+]

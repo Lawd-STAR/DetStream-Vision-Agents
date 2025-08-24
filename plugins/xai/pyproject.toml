@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "stream-agents-plugin-xai"
+dynamic = ["version"]
+description = "XAI for stream agents"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9.0"
+dependencies = [
+    "livekit-agents[codecs, images]>=1.2.5",
+    "openai[realtime]",
+]
+
+
+[tool.hatch.version]
+path = "/stream-agents/plugins/xai/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["getstream"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/stream-agents"]

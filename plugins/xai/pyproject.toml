@@ -10,7 +10,7 @@ license = "Apache-2.0"
 requires-python = ">=3.9.0"
 dependencies = [
     "stream-agents",
-    "openai[realtime]",
+    "xai-sdk",
 ]
 
 

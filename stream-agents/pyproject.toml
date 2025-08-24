@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "stream-agents"
 version = "0.1.0"
 description = "Open video agents. Build low latency video and voice agents on any realtime edge network."
-readme = "README.md"
+readme = "../README.md"
 keywords = ["video AI", "AI", "voice AI", "video agents", "voice agents", "agents", "AI"]
 
 requires-python = ">=3.13"
@@ -38,7 +38,7 @@ Source = "https://github.com/getstream/stream-agents"
 
 [project.optional-dependencies]
 dev = ["pytest", "mypy", "ruff"]
-xai = ["stream-agents-xai"]
+xai = ["stream-agents-plugin-xai"]
 
 
 [tool.hatch.version]

@@ -4,6 +4,7 @@
 
 [tool.uv.sources]
 stream-agents = { workspace = true }
+stream-agents-plugin-xai = { workspace = true }
 
 [tool.uv.workspace]
 members = ["stream-agents", "plugins/*"]

@@ -42,7 +42,7 @@ class Agent:
         turn_detection: Optional[BaseTurnDetector] = None,
         # the agent's user info
         agent_user: Optional[UserRequest] = None,
-        # for video agents. gather data at an interval
+        # for video test123. gather data at an interval
         # - roboflow/ yolo typically run continuously
         # - often combined with API calls to fetch stats etc
         # - state from each processor is passed to the LLM

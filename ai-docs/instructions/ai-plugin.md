@@ -34,7 +34,7 @@ Every plugin is an **independent Python package** – it owns its own `pyproject
 Import the base class and implement the abstract methods:
 
 ```python
-# getstream/plugins/stt/whisper/whisper.py
+# stream_agents/plugins/stt/whisper/whisper.py
 from getstream.plugins.stt import STT
 from typing import Optional, Dict, Any, List, Tuple
 from getstream.video.rtc.track_util import PcmData
@@ -267,7 +267,7 @@ async def test_transcript_events(plugin):
 Running the test from project root will automatically resolve `test_utils` and load `.env` files thanks to the helper module.
 
 ```bash
-uv run pytest stream-agents/plugins/stt/whisper/tests
+uv run pytest stream-test123/plugins/stt/whisper/tests
 ```
 
 ---
@@ -365,14 +365,14 @@ Just create your plugin or example with a `pyproject.toml` file in the right loc
 **Plugin development:**
 ```bash
 # All packages are automatically available in editable mode
-# Changes to getstream core are immediately available to plugins
+# Changes to stream_agents core are immediately available to plugins
 # Changes to plugins are immediately available to examples
 
 # Run tests for a specific plugin
-uv run pytest getstream/plugins/stt/whisper/tests/ -v
+uv run pytest stream_agents/plugins/stt/whisper/tests/ -v
 
 # Run tests for all plugins
-uv run pytest getstream/plugins/ -v
+uv run pytest stream_agents/plugins/ -v
 
 # Run example
 cd examples/your_example_name

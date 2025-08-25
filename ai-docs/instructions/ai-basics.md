@@ -29,8 +29,8 @@ uv run pytest tests/test_video.py      # Run specific test file
 
 **Plugin tests:**
 ```bash
-uv run pytest getstream/plugins/stt/deepgram/tests/     # Run specific plugin tests
-uv run pytest getstream/plugins/*/tests/               # Run all plugin tests
+uv run pytest stream_agents/plugins/stt/deepgram/tests/     # Run specific plugin tests
+uv run pytest stream_agents/plugins/*/tests/               # Run all plugin tests
 ```
 
 **Example tests:**
@@ -82,9 +82,9 @@ Since this is a library, we follow specific logging practices to ensure good int
 
 2. **Logger naming**: Each module should create a logger named after its package structure.
    ```python
-   # In file getstream/plugins/stt/deepgram/stt.py
+   # In file stream_agents/plugins/stt/deepgram/stt.py
    import logging
-   logger = logging.getLogger(__name__)  # Results in 'getstream.plugins.stt.deepgram.stt'
+   logger = logging.getLogger(__name__)  # Results in 'stream_agents.plugins.stt.deepgram.stt'
    ```
 
 3. **No handler configuration**: As a library, we should not configure log handlers, set log levels globally, or modify the root logger. Those decisions belong to the application using the library.

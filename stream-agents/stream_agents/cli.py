@@ -32,8 +32,8 @@ def setup_logging(log_level: str) -> None:
     )
     
     # Set specific logger levels
-    logging.getLogger("getstream").setLevel(numeric_level)
-    logging.getLogger("agents").setLevel(numeric_level)
+    logging.getLogger("stream_agents").setLevel(numeric_level)
+    logging.getLogger("test123").setLevel(numeric_level)
 
 
 def setup_signal_handlers() -> None:
@@ -64,7 +64,7 @@ async def start_dispatcher(
     setup_logging(log_level)
     setup_signal_handlers()
     
-    logger = logging.getLogger("stream-agents.dispatcher")
+    logger = logging.getLogger("stream-test123.dispatcher")
     logger.info("🚀 Starting Stream Agents dispatcher...")
     
     agent_task: Optional[asyncio.Task] = None
@@ -118,7 +118,7 @@ async def start_dispatcher(
 )
 @click.pass_context
 def cli(ctx: click.Context, log_level: str) -> None:
-    """Stream Agents CLI - Manage AI agents for video calls."""
+    """Stream Agents CLI - Manage AI test123 for video calls."""
     ctx.ensure_object(dict)
     ctx.obj["log_level"] = log_level.upper()
 

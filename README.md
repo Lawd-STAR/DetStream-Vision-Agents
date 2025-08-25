@@ -41,10 +41,10 @@ Demo video
 
 ```bash
 # Install dependencies using uv
-uv add openai python-dotenv getstream
+uv add openai python-dotenv stream_agents
 
 # Or with pip
-pip install openai python-dotenv getstream
+pip install openai python-dotenv stream_agents
 ```
 
 ## ⚡ Quick Start - Cluely style AI

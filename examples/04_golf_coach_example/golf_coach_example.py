@@ -7,7 +7,9 @@ from getstream import Stream
 from getstream.models import UserRequest
 from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.plugins.deepgram.stt import DeepgramSTT
+from stream_agents.processors import YOLOPoseProcessor
 
+# TODO: imports are not nice
 from stream_agents.turn_detection import FalTurnDetection
 
 from stream_agents.edge.edge_transport import StreamEdge
@@ -49,7 +51,7 @@ async def main() -> None:
         # turn keeping
         turn_detection=turn_detection,
         # processors can fetch extra data, check images/audio data or transform video
-        processors=[],
+        processors=[YOLOPoseProcessor()],
     )
 
 
@@ -72,4 +74,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(start_dispatcher(main, log_level="DEBUG"))
+    asyncio.run(start_dispatcher(main))

@@ -26,3 +26,4 @@ pyrightconfig.json
 
 *.egg-info/
 *.egg
+*.pt

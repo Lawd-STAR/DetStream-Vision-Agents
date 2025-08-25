@@ -14,6 +14,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Dict, Any
 from PIL import Image
+from aiortc import VideoStreamTrack
 
 from .base_processor import (
     AudioVideoProcessor,
@@ -121,9 +122,8 @@ class YOLOPoseProcessor(
 
     def create_video_track(self):
         """Create a video track for publishing pose-annotated frames."""
-        from agents.agents import TransformedVideoTrack
 
-        self._video_track = TransformedVideoTrack()
+        self._video_track = VideoStreamTrack()
         logger.info("🎥 YOLO pose video track created for publishing")
         return self._video_track
 

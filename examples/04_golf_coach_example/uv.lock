@@ -1868,16 +1868,20 @@ name = "stream-agents-golf"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "av" },
     { name = "getstream", extra = ["webrtc"] },
     { name = "python-dotenv" },
     { name = "stream-agents" },
+    { name = "ultralytics" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "av", specifier = ">=14.4.0" },
     { name = "getstream", extras = ["webrtc"], specifier = "==2.3.0a5" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "stream-agents", editable = "../../stream-agents" },
+    { name = "ultralytics", specifier = ">=8.3.184" },
 ]
 
 [[package]]

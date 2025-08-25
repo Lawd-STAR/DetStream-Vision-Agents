@@ -178,16 +178,16 @@ class Agent:
 
                 self.logger.info(f"🤖 Agent joined call: {call.id}")
 
-                # Set up audio track if available
-                if self.publish_audio:
-                    await connection.add_tracks(audio=self._audio_track)
-                    self.logger.debug("🤖 Agent ready to speak")
-
-                # Set up video track if available
-                if self.publish_video:
-                    await connection.add_tracks(video=self._video_track)
-
-                    self.logger.debug("🎥 Agent ready to publish video")
+                # Set up audio and video tracks together to avoid SDP issues
+                audio_track = self._audio_track if self.publish_audio else None
+                video_track = self._video_track if self.publish_video else None
+                
+                if audio_track or video_track:
+                    await connection.add_tracks(audio=audio_track, video=video_track)
+                    if audio_track:
+                        self.logger.debug("🤖 Agent ready to speak")
+                    if video_track:
+                        self.logger.debug("🎥 Agent ready to publish video")
 
                 # Set up STS audio forwarding if in STS mode
                 if self.sts_mode and self._sts_connection:

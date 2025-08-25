@@ -8,6 +8,8 @@ dependencies = [
   "python-dotenv>=1.0",
   "getstream[webrtc]==2.3.0a5",
   "stream-agents",
+  "ultralytics>=8.3.184",
+  "av>=14.4.0",
 ]
 
 [tool.uv.sources]

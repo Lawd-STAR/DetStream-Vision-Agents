@@ -16,16 +16,26 @@ SDKs for React, Android, iOS, Flutter, React, React Native and Unity.
 
 Listen to voice but don't respond. Show suggestions as text/chat
 
+Demo video
+
 ### Golf Coaching Example
 
 Use Yolo to determine body position. Share this with gemini for live coaching.
+
+Demo video
+
 
 ### Dota Coaching Example
 
 Use API calls to retrieve game state, while also analysing the gameplay. 
 OpenAI + API calls.
 
+Demo video
+
 ### Security Camera Example
+
+Demo video
+
 
 ## 📦 Installation
 

@@ -1,22 +1,31 @@
-# Open Agents by Stream
+# Video/Vision Agents by Stream
 
-Low latency video (and voice) AI agents on [Stream's edge network](https://getstream.io/video/).
+Video/Vision AI agents on [Stream's edge network](https://getstream.io/video/).
 
-* Average time to join: 500ms
-* 95% percentile audio transport latency: 30ms
+-  **Low Latency**: Quickly join (500ms) and fast audio latency (30ms)
+-  **Video AI**: Built for real-time video AI. Combine Yolo, Roboflow and others with realtime models
+-  **Open**: Built by Stream, but use any video edge network that you like
+-  **Video / Voice & Chat**: Conversation history, turn keeping in addition to video AI
 
 Open Agent library. Goal is to support most of our video/audio competitors. (See adding support section)
 SDKs for React, Android, iOS, Flutter, React, React Native and Unity.
 
-## 🚀 Features
-
-- ✅ **Low Latency**: Quickly join (500ms) and fast audio latency (30ms)
-- ✅ **Video AI**: Built for real-time video AI
-- ✅ **Open**: Built by Stream, but use any video edge network that you like
-
 ## Examples
 
+### Cluely example
 
+Listen to voice but don't respond. Show suggestions as text/chat
+
+### Golf Coaching Example
+
+Use Yolo to determine body position. Share this with gemini for live coaching.
+
+### Dota Coaching Example
+
+Use API calls to retrieve game state, while also analysing the gameplay. 
+OpenAI + API calls.
+
+### Security Camera Example
 
 ## 📦 Installation
 

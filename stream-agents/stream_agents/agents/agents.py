@@ -5,6 +5,7 @@ from contextlib import nullcontext
 from typing import Optional, List, Any
 from uuid import uuid4
 
+from aiortc import VideoStreamTrack
 from getstream.plugins.common import TTS, STT
 from .reply_queue import ReplyQueue
 from ..edge.edge_transport import EdgeTransport, StreamEdge
@@ -537,7 +538,7 @@ class Agent:
 
         self._connection: Optional[rtc.RTCConnection] = None
         self._audio_track: Optional[audio_track.AudioStreamTrack] = None
-        self._video_track: Optional[TransformedVideoTrack] = None
+        self._video_track: Optional[VideoStreamTrack] = None
 
         # Set up audio track if TTS is available
         if self.publish_audio:
@@ -549,14 +550,9 @@ class Agent:
         if self.publish_video:
             # Get the first video publisher to create the track
             video_publisher = self.video_publishers[0]
-            if hasattr(video_publisher, "create_video_track"):
-                self._video_track = video_publisher.create_video_track()
-                self.logger.info("🎥 Video track initialized from video publisher")
-            else:
-                # Fallback to TransformedVideoTrack
+            self._video_track = video_publisher.create_video_track()
+            self.logger.info("🎥 Video track initialized from video publisher")
 
-                self._video_track = TransformedVideoTrack()
-                self.logger.info("🎥 Video track initialized with fallback")
 
     async def _setup_sts_audio_forwarding(self, sts_connection, rtc_connection):
         """Set up audio forwarding from STS connection to WebRTC connection."""

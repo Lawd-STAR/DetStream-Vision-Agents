@@ -1,12 +1,12 @@
 [project]
 name = "simple-agents-example"
 version = "0.0.0"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 
 # put only what this example needs
 dependencies = [
   "python-dotenv>=1.0",
-  "getstream[webrtc]==2.3.0a3",
+  "getstream[webrtc]==2.3.0a5",
   "stream-agents",
 ]
 

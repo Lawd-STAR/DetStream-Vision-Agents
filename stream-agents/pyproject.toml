@@ -11,7 +11,7 @@ keywords = ["video AI", "AI", "voice AI", "video agents", "voice agents", "agent
 
 requires-python = ">=3.13"
 dependencies = [
-    "getstream[webrtc]==2.3.0a3",
+    "getstream[webrtc]==2.3.0a5",
     "getstream-plugins-elevenlabs>=0.1.0",
     "python-dotenv>=1.1.1",
     "pre-commit>=4.3.0",
@@ -45,7 +45,7 @@ xai = ["stream-agents-plugin-xai"]
 path = "stream-agents/getstream/agents/version.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["stream-agents"]
+packages = ["stream_agents"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/stream-agents"]

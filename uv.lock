@@ -569,7 +569,7 @@ wheels = [
 
 [[package]]
 name = "getstream"
-version = "2.3.0a3"
+version = "2.3.0a5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -585,7 +585,7 @@ dependencies = [
     { name = "tenacity" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/dd/82b1233c6cfb57933a707ca095ee920079cfe48b989fddbbfec24610ba82/getstream-2.3.0a3-py3-none-any.whl", hash = "sha256:92faae45d602583db92f0dc0288f73caa71b428e955e923fa5b37328cbb5b3be", size = 257166, upload-time = "2025-07-25T11:52:02.943Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/69/fe478813a1e7fb35ae77d4dde08d2e989fd243fb0d80e4acad5809cd6c90/getstream-2.3.0a5-py3-none-any.whl", hash = "sha256:740072caebbaf0238d870a0a820569a947a20c4c5162f39645307bdd26c814dd", size = 262988, upload-time = "2025-08-11T18:34:16.885Z" },
 ]
 
 [package.optional-dependencies]
@@ -597,6 +597,7 @@ webrtc = [
     { name = "python-dateutil" },
     { name = "scipy" },
     { name = "soundfile" },
+    { name = "structlog" },
     { name = "torch" },
     { name = "torchaudio" },
     { name = "twirp" },
@@ -1968,7 +1969,7 @@ requires-dist = [
     { name = "aiortc", specifier = ">=1.13.0" },
     { name = "click", specifier = ">=8.0.0" },
     { name = "fal-client", specifier = ">=0.6.1" },
-    { name = "getstream", extras = ["webrtc"], specifier = "==2.3.0a3" },
+    { name = "getstream", extras = ["webrtc"], specifier = "==2.3.0a5" },
     { name = "getstream-plugins-deepgram", specifier = ">=0.1.0" },
     { name = "getstream-plugins-elevenlabs", specifier = ">=0.1.0" },
     { name = "google-genai", specifier = ">=0.3.0" },

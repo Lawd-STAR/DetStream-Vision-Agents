@@ -8,18 +8,6 @@ from getstream.models import UserRequest
 from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.plugins.deepgram.stt import DeepgramSTT
 
-# Import project modules - these should be run from the project root
-from getstream.agents.turn_detection import FalTurnDetection
-
-from getstream.agents.edge.edge_transport import StreamEdge
-from getstream.agents.processors.base_processor import ImageCapture, AudioLogger
-from getstream.agents.utils import open_demo
-from getstream.agents.llm import OpenAILLM
-from getstream.agents.agents.agents import Agent
-from getstream.agents.cli import start_dispatcher
-
-
-
 async def main() -> None:
     """Create a simple agent and join a call."""
 

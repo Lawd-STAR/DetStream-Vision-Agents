@@ -4,8 +4,6 @@ Stream Agents Utilities Package
 This package provides utility functions and scripts for Stream Agents.
 """
 
-__version__ = "0.1.0"
-
 import os
 import webbrowser
 from urllib.parse import urlencode
@@ -70,3 +68,8 @@ def open_pronto(api_key: str, token: str, call_id: str):
     except Exception as e:
         logger.error(f"❌ Failed to open browser: {e}")
         logger.info(f"Please manually open this URL: {url}")
+
+__all__ = [
+    "open_demo",
+    "open_pronto", 
+]

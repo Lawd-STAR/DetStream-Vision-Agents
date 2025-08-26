@@ -693,10 +693,6 @@ class Agent:
         finally:
             self._interval_task = None
 
-    def create_user(self):
-        """Create user - placeholder for any user setup logic."""
-        pass
-
     async def finish(self):
         """Wait for the call to end gracefully."""
         # If connection is None or already closed, return immediately

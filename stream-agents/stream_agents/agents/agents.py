@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from aiohttp import ClientSession
 from aiortc import VideoStreamTrack
+from openai.types.responses import EasyInputMessageParam, ResponseInputItemParam
+
 from getstream.plugins.common import (
     TTS,
     STT,
@@ -107,24 +109,45 @@ class Agent:
         else:
             self._stt_setup = False
 
-    async def say_text(self, text):
+    async def say(self, text):
         await self.queue.say_text(self, text)
 
     async def play_audio(self, pcm):
         await self.queue.send_audio(pcm)
 
-    async def reply_to_text(self, input_text: str, participant: Participant):
-        """
-        Receive text (from a transcription, or user input)
-        Run it through the LLM, get a response. And reply
-        """
-        if self.conversation:
-            self.conversation.add_message(input_text, participant.user_id)
+    async def create_response(self, input: List[ResponseInputItemParam] | str, participant: Participant = None):
 
+        # standardize on input
+        if isinstance(input, str):
+            role = "system"
+            if participant is not None:
+                role = "user"
+            input = [EasyInputMessageParam(content=input, role=role, type="message")]
+
+        logging.info("participant in create response is %s", participant)
+        if self.conversation:
+            for i in input:
+
+                if participant is not None:
+                    user_id = participant.user_id
+                else:
+                    if i["role"] == "assistant":
+                        user_id = self.agent_user.id
+                    else:
+                        #
+                        user_id = self.agent_user.id
+
+
+
+                if i["type"] == "message":
+                    self.conversation.add_message(i["content"], user_id)
+
+        # TODO: support list input here
+        #llm_response = await self.agent.llm.generate(input)
         # TODO: Route through the queue
         # Either resumse, pause, interrupt
         await self.queue.resume(
-            input_text
+            input[0]["content"]
         )  # TODO: how does this get access to context/conversation?
 
     def get_subscription_config(self):
@@ -276,11 +299,14 @@ class Agent:
 
         # Handle audio data for STT or STS
         @self._connection.on("audio")
-        async def on_audio_received(pcm: PcmData, user):
-            if self.turn_detection:
-                await self.turn_detection.process_audio(pcm, user.user_id)
+        async def on_audio_received(pcm: PcmData, participant: Participant):
+            if not participant:
+                import pdb;pdb.set_trace()
 
-            await self.reply_to_audio(pcm, user)
+            if self.turn_detection:
+                await self.turn_detection.process_audio(pcm, participant.user_id)
+
+            await self.reply_to_audio(pcm, participant)
 
         # listen to video tracks if we have video or image processors
         self.logger.info(
@@ -464,7 +490,7 @@ class Agent:
     async def _process_transcription(
         self, text: str, participant: Participant = None
     ) -> None:
-        await self.reply_to_text(text, participant)
+        await self.create_response(text, participant)
 
     @property
     def sts_mode(self) -> bool:

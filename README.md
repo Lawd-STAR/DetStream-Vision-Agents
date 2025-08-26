@@ -14,9 +14,13 @@ SDKs for React, Android, iOS, Flutter, React, React Native and Unity.
 
 ### Cluely example
 
-Listen to voice but don't respond. Show suggestions as text/chat
+Listen to voice and watch the screen but don't respond. Show suggestions as text/chat.
 
 Demo video
+
+```python
+# partial example, see the example file for full details
+```
 
 ### Golf Coaching Example
 
@@ -24,6 +28,9 @@ Use Yolo to determine body position. Share this with gemini for live coaching.
 
 Demo video
 
+```python
+# partial example, see the example file for full details
+```
 
 ### Dota Coaching Example
 

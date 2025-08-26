@@ -143,7 +143,7 @@ class Agent:
                     self.conversation.add_message(i["content"], user_id)
 
         # TODO: support list input here
-        #llm_response = await self.agent.llm.generate(input)
+        llm_response = await self.llm.generate(input)
         # TODO: Route through the queue
         # Either resumse, pause, interrupt
         await self.queue.resume(

@@ -2,26 +2,13 @@ import asyncio
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from openai import OpenAI
-from openai.types.responses import EasyInputMessageParam
-
-from getstream.plugins.deepgram.stt import DeepgramSTT
-from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
+from getstream.plugins import DeepgramSTT, ElevenLabsTTS
 from stream_agents.turn_detection import FalTurnDetection
 from stream_agents.llm import OpenAILLM
-
 from stream_agents import Agent, Stream, StreamEdge, start_dispatcher, open_demo
 
 load_dotenv()
 
-'''
-TODO
-- Plugin import paths
-- Function calling decorator/support
-- MCP support
-- Have the AI say something or get an instruction after join
-- Pass participant instead of user to the process functions
-'''
 
 async def start_agent() -> None:
 
@@ -56,6 +43,7 @@ async def start_agent() -> None:
         await agent.create_response("please say hi to the user and ask how their day is")
 
         await agent.finish() # run till the call ends
+
 
 if __name__ == "__main__":
     asyncio.run(start_dispatcher(start_agent))

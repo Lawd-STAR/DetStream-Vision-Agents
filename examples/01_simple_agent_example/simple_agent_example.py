@@ -4,20 +4,16 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from getstream import Stream
-from getstream.models import UserRequest
-from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 from getstream.plugins.deepgram.stt import DeepgramSTT
-from stream_agents.processors import YOLOPoseProcessor
+from getstream.plugins.elevenlabs.tts import ElevenLabsTTS
 
-# TODO: imports are not nice
-from stream_agents.turn_detection import FalTurnDetection
-
-from stream_agents.edge.edge_transport import StreamEdge
-from stream_agents.processors.base_processor import ImageCapture, AudioLogger
-from stream_agents.utils import open_demo
-from stream_agents.llm import OpenAILLM
 from stream_agents.agents.agents import Agent
 from stream_agents.cli import start_dispatcher
+from stream_agents.edge import StreamEdge
+from stream_agents.llm import OpenAILLM
+
+from stream_agents.turn_detection import FalTurnDetection
+from stream_agents.utils import open_demo
 
 async def main() -> None:
     """Create a simple agent and join a call."""
@@ -52,9 +48,6 @@ async def main() -> None:
         # processors can fetch extra data, check images/audio data or transform video
         processors=[],
     )
-
-
-
 
     try:
         # Join the call - this is the main functionality we're demonstrating

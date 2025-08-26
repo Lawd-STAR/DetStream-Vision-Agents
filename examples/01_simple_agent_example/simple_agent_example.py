@@ -23,13 +23,13 @@ async def main() -> None:
     """Create a simple agent and join a call."""
 
     load_dotenv()
-
-    # TODO this user creation flow is ugly.
-    agent_user = UserRequest(id=str(uuid4()), name="My happy AI friend")
     client = Stream.from_env()
-    client.upsert_users(UserRequest(id=agent_user.id, name=agent_user.name))
+
+    # create the AI user
+    agent_user = client.create_user(name="My happy AI friend")
 
     # Create the agent
+    # TODO: have some defaults. inline the turn detection below
     turn_detection = FalTurnDetection(
         buffer_duration=3.0,  # Process 3 seconds of audio at a time
         prediction_threshold=0.7,  # Higher threshold for more confident detections
@@ -37,7 +37,6 @@ async def main() -> None:
         max_pause_duration=2.0,
     )
 
-    # TODO: LLM class
     agent = Agent(
         edge=StreamEdge(), # low latency edge. clients for React, iOS, Android, RN, Flutter etc.
         agent_user=agent_user, # the user name etc for the agent

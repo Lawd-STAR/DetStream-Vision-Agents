@@ -5,6 +5,7 @@ from contextlib import nullcontext
 from typing import Optional, List, Any
 from uuid import uuid4
 
+from aiohttp import ClientSession
 from aiortc import VideoStreamTrack
 from getstream.plugins.common import (
     TTS,
@@ -32,6 +33,8 @@ from getstream.video.rtc.tracks import (
 from .conversation import Conversation
 from ..processors.base_processor import filter_processors, ProcessorType, BaseProcessor
 from ..turn_detection import TurnEvent, TurnEventData, BaseTurnDetector
+
+
 
 
 class Agent:
@@ -132,7 +135,7 @@ class Agent:
             ]
         )
 
-    async def join(self, call: Call) -> None:
+    async def join(self, call: Call) -> "AgentSessionContextManager":
         self.call = call
         self.channel = None
         self.conversation = None
@@ -231,6 +234,10 @@ class Agent:
                 except Exception as e:
                     self.logger.error(f"❌ Error while waiting for connection: {e}")
                     self.logger.error(traceback.format_exc())
+
+                from .agent_session import AgentSessionContextManager
+
+                return AgentSessionContextManager(self)
 
         except KeyboardInterrupt:
             self.logger.info("👋 Shutting down agent...")

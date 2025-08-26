@@ -9,20 +9,25 @@ from stream_agents.llm import OpenAILLM
 
 from stream_agents import Agent, Stream, StreamEdge, start_dispatcher, open_demo
 
+load_dotenv()
 
-async def main() -> None:
-    """Create a simple agent and join a call."""
+'''
+TODO
+- Plugin import paths
+- Function calling decorator/support
+- MCP support
+'''
 
-    load_dotenv()
+async def start_agent() -> None:
+
+    # create a stream client and a user object
     client = Stream.from_env()
-
-    # create the AI user
     agent_user = client.create_user(name="My happy AI friend")
 
     # Create the agent
     agent = Agent(
         edge=StreamEdge(), # low latency edge. clients for React, iOS, Android, RN, Flutter etc.
-        agent_user=agent_user, # the user name etc for the agent
+        agent_user=agent_user, # the user object for the agent (name, image etc)
         # tts, llm, stt more. see the realtime example for sts
         llm=OpenAILLM(
             name="gpt-4o",
@@ -30,26 +35,21 @@ async def main() -> None:
         ),
         tts=ElevenLabsTTS(),
         stt=DeepgramSTT(),
-        # turn keeping
         turn_detection=FalTurnDetection(),
-        # processors can fetch extra data, check images/audio data or transform video
-        processors=[],
+        processors=[], # processors can fetch extra data, check images/audio data or transform video
     )
 
-    try:
-        # Join the call - this is the main functionality we're demonstrating
-        call = client.video.call("default", str(uuid4()))
-        # Open the demo env
-        open_demo(call)
+    # Create a call
+    call = client.video.call("default", str(uuid4()))
 
-        # have the agent join a call/room
-        await agent.join(call)
+    # Open the demo UI
+    open_demo(call)
 
-        # run till the call is ended
-        await agent.finish()
-    finally:
-        await agent.close()
+    # Have the agent join the call/room
+    with await agent.join(call):
+        await agent.finish() # run till the call ends
+
 
 
 if __name__ == "__main__":
-    asyncio.run(start_dispatcher(main))
+    asyncio.run(start_dispatcher(start_agent))

@@ -6,7 +6,12 @@ from typing import Optional, List, Any
 from uuid import uuid4
 
 from aiortc import VideoStreamTrack
-from getstream.plugins.common import TTS, STT
+from getstream.plugins.common import (
+    TTS,
+    STT,
+    STTTranscriptEvent,
+    STTPartialTranscriptEvent,
+)
 from .reply_queue import ReplyQueue
 from ..edge.edge_transport import EdgeTransport, StreamEdge
 from getstream.chat.client import ChatClient
@@ -27,7 +32,6 @@ from getstream.video.rtc.tracks import (
 from .conversation import Conversation
 from ..processors.base_processor import filter_processors, ProcessorType, BaseProcessor
 from ..turn_detection import TurnEvent, TurnEventData, BaseTurnDetector
-
 
 
 class Agent:
@@ -181,7 +185,7 @@ class Agent:
                 # Set up audio and video tracks together to avoid SDP issues
                 audio_track = self._audio_track if self.publish_audio else None
                 video_track = self._video_track if self.publish_video else None
-                
+
                 if audio_track or video_track:
                     await connection.add_tracks(audio=audio_track, video=video_track)
                     if audio_track:
@@ -424,24 +428,27 @@ class Agent:
         )
 
     async def _on_partial_transcript(
-        self, text: str, participant: Participant = None, metadata=None
+        self,
+        event: STTPartialTranscriptEvent,
+        participant: Participant = None,
+        metadata=None,
     ):
         """Handle partial transcript from STT service."""
-        if text and text.strip():
+        if event.text and event.text.strip():
             if self.conversation:
-                self.conversation.partial_update_message(text, participant)
-            self.logger.debug(f"🎤 [partial]: {text}")
+                self.conversation.partial_update_message(event.text, participant)
+            self.logger.debug(f"🎤 [partial]: {event.text}")
 
     async def _on_transcript(
-        self, text: str, participant: Participant = None, metadata=None
+        self, event: STTTranscriptEvent, participant: Participant = None, metadata=None
     ):
         """Handle final transcript from STT service."""
-        if text and text.strip():
+        if event.text and event.text.strip():
             if self.conversation:
-                self.conversation.finish_last_message(text)
+                self.conversation.finish_last_message(event.text)
 
             # Process transcription through LLM and respond
-            await self._process_transcription(text, participant)
+            await self._process_transcription(event.text, participant)
 
     async def _on_stt_error(self, error):
         """Handle STT service errors."""
@@ -553,7 +560,6 @@ class Agent:
             self._video_track = video_publisher.create_video_track()
             self.logger.info("🎥 Video track initialized from video publisher")
 
-
     async def _setup_sts_audio_forwarding(self, sts_connection, rtc_connection):
         """Set up audio forwarding from STS connection to WebRTC connection."""
         self.logger.info("🔗 Setting up STS audio forwarding")
@@ -664,7 +670,7 @@ class Agent:
         if not self._connection:
             logging.info("🔚 Agent connection already closed, finishing immediately")
             return
-        
+
         try:
             fut = asyncio.get_event_loop().create_future()
 

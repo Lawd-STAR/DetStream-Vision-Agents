@@ -1,0 +1,13 @@
+name: CI (unit)
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  unit:
+    uses: ./.github/workflows/_run-tests.yml
+    with:
+      marker: 'not integration'
+      extra-args: ''

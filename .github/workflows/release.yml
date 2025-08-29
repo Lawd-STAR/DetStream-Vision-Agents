@@ -1,0 +1,16 @@
+name: Integration (pre-release / release)
+on:
+  push:
+    tags:
+      - 'v*'          # run when you push a version tag like v1.2.3
+  release:
+    types: [published] # run when a GitHub Release is published
+  workflow_dispatch: {}
+
+jobs:
+  integration:
+    uses: ./.github/workflows/_run-tests.yml
+    with:
+      marker: 'integration'
+      extra-args: ''
+    secrets: inherit

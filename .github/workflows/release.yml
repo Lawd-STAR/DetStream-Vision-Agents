@@ -9,7 +9,7 @@ on:
 
 jobs:
   integration:
-    uses: ./.github/workflows/_run-tests.yml
+    uses: ./.github/workflows/run_tests.yml
     with:
       marker: 'integration'
       extra-args: ''

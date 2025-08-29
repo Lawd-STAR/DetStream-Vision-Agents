@@ -20,7 +20,7 @@ jobs:
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: ./.github/actions/python-uv-setup
       - name: Build matrix
         id: gen
         shell: bash
@@ -33,14 +33,7 @@ jobs:
     name: Ruff lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          python-version: "3.12"
-          enable-cache: true
-      - name: Install Ruff
-        run: uv pip install ruff
+      - uses: ./.github/actions/python-uv-setup
       - name: Run Ruff
         run: uv run ruff check .
 
@@ -56,23 +49,5 @@ jobs:
       PYTHONDONTWRITEBYTECODE: 1
       PLUGIN: ${{ matrix.plugin }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: ./.github/actions/python-uv-setup
 
-      - name: Set up uv (and Python)
-        uses: astral-sh/setup-uv@v4
-        with:
-          python-version: ${{ matrix.python }}
-          enable-cache: true
-
-      # If you use a pyproject/lockfile, prefer `uv sync` (fast, reproducible).
-      # Otherwise, fall back to requirements.txt.
-      - name: Install project deps with uv
-        shell: bash
-        run: |
-          set -euxo pipefail
-          if [ -f pyproject.toml ]; then
-            # Base install
-            uv sync --all-extras --dev || uv sync
-            # Optional: if each plugin has an extra matching its folder name:
-            if [ "${PLUGIN}" != "core" ]; then
-              # Install plugin-specific extras on top (ignore if missing)

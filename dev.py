@@ -13,22 +13,20 @@ from typing import List, Optional
 import click
 
 
-def run_command(cmd: List[str], env: Optional[dict] = None, check: bool = True) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: List[str], env: Optional[dict] = None, check: bool = True
+) -> subprocess.CompletedProcess:
     """Run a command with proper error handling and output."""
     click.echo(f"Running: {' '.join(cmd)}")
-    
+
     # Set up environment
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
-    
+
     try:
         result = subprocess.run(
-            cmd,
-            check=check,
-            capture_output=False,
-            env=full_env,
-            text=True
+            cmd, check=check, capture_output=False, env=full_env, text=True
         )
         return result
     except subprocess.CalledProcessError as e:
@@ -42,12 +40,12 @@ def discover_plugins() -> List[str]:
     """Discover available plugins by scanning the plugins directory."""
     plugins = ["core"]
     plugins_dir = Path("plugins")
-    
+
     if plugins_dir.exists():
         for item in plugins_dir.iterdir():
-            if item.is_dir() and not item.name.startswith('.'):
+            if item.is_dir() and not item.name.startswith("."):
                 plugins.append(item.name)
-    
+
     return plugins
 
 
@@ -64,7 +62,7 @@ def discover_plugins_cmd():
     """Discover available plugins and show them."""
     click.echo("Discovering plugins...")
     plugins = discover_plugins()
-    
+
     click.echo("Available plugins:")
     for plugin in plugins:
         click.echo(f"  - {plugin}")
@@ -82,20 +80,20 @@ def lint():
 def install(plugin: str):
     """Install project dependencies with uv."""
     click.echo("Installing dependencies...")
-    
+
     # Set environment variable
     env = {"PYTHONDONTWRITEBYTECODE": "1"}
-    
+
     if Path("pyproject.toml").exists():
         click.echo("Installing with uv sync...")
-        
+
         # Try full sync first, fallback to basic sync
         try:
             run_command(["uv", "sync", "--all-extras", "--dev"], env=env)
         except subprocess.CalledProcessError:
             click.echo("Full sync failed, trying basic sync...")
             run_command(["uv", "sync"], env=env)
-        
+
         # Install plugin-specific extras if not core
         if plugin != "core":
             click.echo(f"Installing plugin-specific extras for {plugin}...")
@@ -115,91 +113,137 @@ def install(plugin: str):
 @click.option("--marker", default="not integration", help="Pytest marker expression")
 @click.option("--plugin", default="core", help="Plugin to test")
 @click.option("--extra-args", default="", help="Extra pytest arguments")
-@click.option("--install-deps/--no-install", default=True, help="Install dependencies before testing")
+@click.option(
+    "--install-deps/--no-install",
+    default=True,
+    help="Install dependencies before testing",
+)
 def test(marker: str, plugin: str, extra_args: str, install_deps: bool):
     """Run tests with specified marker."""
     if install_deps:
         ctx = click.get_current_context()
         ctx.invoke(install, plugin=plugin)
-    
+
     click.echo(f"Running tests with marker: {marker}")
     click.echo(f"Plugin: {plugin}")
     click.echo(f"Extra args: {extra_args}")
-    
+
     # Set up environment
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PLUGIN": plugin
-    }
-    
+    env = {"PYTHONDONTWRITEBYTECODE": "1", "PLUGIN": plugin}
+
     # Build pytest command
     cmd = ["uv", "run", "pytest", "-m", marker]
     if extra_args:
         cmd.extend(extra_args.split())
-    
+
     run_command(cmd, env=env)
 
 
 @cli.command()
 @click.option("--extra-args", default="", help="Extra pytest arguments")
-@click.option("--install-deps/--no-install", default=True, help="Install dependencies before testing")
+@click.option(
+    "--install-deps/--no-install",
+    default=True,
+    help="Install dependencies before testing",
+)
 def test_unit(extra_args: str, install_deps: bool):
     """Run unit tests only."""
     ctx = click.get_current_context()
-    ctx.invoke(test, marker="not integration", plugin="core", extra_args=extra_args, install_deps=install_deps)
+    ctx.invoke(
+        test,
+        marker="not integration",
+        plugin="core",
+        extra_args=extra_args,
+        install_deps=install_deps,
+    )
 
 
 @cli.command()
 @click.option("--extra-args", default="", help="Extra pytest arguments")
-@click.option("--install-deps/--no-install", default=True, help="Install dependencies before testing")
+@click.option(
+    "--install-deps/--no-install",
+    default=True,
+    help="Install dependencies before testing",
+)
 def test_integration(extra_args: str, install_deps: bool):
     """Run integration tests only."""
     ctx = click.get_current_context()
-    ctx.invoke(test, marker="integration", plugin="core", extra_args=extra_args, install_deps=install_deps)
+    ctx.invoke(
+        test,
+        marker="integration",
+        plugin="core",
+        extra_args=extra_args,
+        install_deps=install_deps,
+    )
 
 
 @cli.command()
 @click.option("--plugin", default="core", help="Plugin to test")
 @click.option("--extra-args", default="", help="Extra pytest arguments")
-@click.option("--install-deps/--no-install", default=True, help="Install dependencies before testing")
+@click.option(
+    "--install-deps/--no-install",
+    default=True,
+    help="Install dependencies before testing",
+)
 def test_plugin(plugin: str, extra_args: str, install_deps: bool):
     """Run tests for a specific plugin."""
     if plugin == "core":
         click.echo("Running core tests...")
     else:
         click.echo(f"Running tests for plugin: {plugin}")
-    
+
     ctx = click.get_current_context()
-    ctx.invoke(test, marker="not integration", plugin=plugin, extra_args=extra_args, install_deps=install_deps)
+    ctx.invoke(
+        test,
+        marker="not integration",
+        plugin=plugin,
+        extra_args=extra_args,
+        install_deps=install_deps,
+    )
 
 
 @cli.command()
-@click.option("--install-deps/--no-install", default=True, help="Install dependencies before testing")
+@click.option(
+    "--install-deps/--no-install",
+    default=True,
+    help="Install dependencies before testing",
+)
 def test_all(install_deps: bool):
     """Run all tests (unit + integration)."""
     click.echo("Running all tests...")
     ctx = click.get_current_context()
-    
+
     ctx.invoke(test_unit, extra_args="", install_deps=install_deps)
     ctx.invoke(test_integration, extra_args="", install_deps=False)  # Don't reinstall
 
 
 @cli.command()
-@click.option("--install-deps/--no-install", default=True, help="Install dependencies before testing")
+@click.option(
+    "--install-deps/--no-install",
+    default=True,
+    help="Install dependencies before testing",
+)
 def test_all_plugins(install_deps: bool):
     """Run tests for all available plugins."""
     click.echo("Testing all plugins...")
     plugins = discover_plugins()
     ctx = click.get_current_context()
-    
+
     first_plugin = True
     for plugin in plugins:
         click.echo(f"Testing plugin: {plugin}")
         try:
-            ctx.invoke(test_plugin, plugin=plugin, extra_args="", install_deps=install_deps and first_plugin)
+            ctx.invoke(
+                test_plugin,
+                plugin=plugin,
+                extra_args="",
+                install_deps=install_deps and first_plugin,
+            )
             first_plugin = False  # Only install deps for first plugin
         except SystemExit:
-            click.echo(f"Tests failed for plugin {plugin}, continuing with next plugin...")
+            click.echo(
+                f"Tests failed for plugin {plugin}, continuing with next plugin..."
+            )
             continue
 
 
@@ -208,11 +252,11 @@ def setup():
     """Initial setup - install dependencies and run basic checks."""
     click.echo("Setting up development environment...")
     ctx = click.get_current_context()
-    
+
     ctx.invoke(install)
     ctx.invoke(discover_plugins_cmd)
     ctx.invoke(lint)
-    
+
     click.echo("Setup complete! Try 'python dev.py test-unit' to run unit tests.")
 
 
@@ -220,15 +264,22 @@ def setup():
 def clean():
     """Clean up temporary files."""
     click.echo("Cleaning up...")
-    
+
     # Find and remove Python cache files
-    for pattern in ["**/*.pyc", "**/__pycache__", "**/*.egg-info", "**/.coverage", "**/.pytest_cache"]:
+    for pattern in [
+        "**/*.pyc",
+        "**/__pycache__",
+        "**/*.egg-info",
+        "**/.coverage",
+        "**/.pytest_cache",
+    ]:
         for path in Path(".").glob(pattern):
             if path.is_file():
                 path.unlink()
                 click.echo(f"Removed file: {path}")
             elif path.is_dir():
                 import shutil
+
                 shutil.rmtree(path)
                 click.echo(f"Removed directory: {path}")
 
@@ -274,7 +325,9 @@ def example_integration():
 def example_specific():
     """Example: Show how to run specific test file."""
     click.echo("Example: uv run pytest tests/test_specific.py -v")
-    click.echo("You can run: python dev.py test --extra-args 'tests/test_specific.py -v'")
+    click.echo(
+        "You can run: python dev.py test --extra-args 'tests/test_specific.py -v'"
+    )
 
 
 @cli.command()

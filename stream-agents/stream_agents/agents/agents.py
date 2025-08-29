@@ -34,9 +34,11 @@ from getstream.video.rtc.tracks import (
 from .conversation import Conversation
 from ..processors.base_processor import filter_processors, ProcessorType, BaseProcessor
 from ..turn_detection import TurnEvent, TurnEventData, BaseTurnDetector
+from typing import TYPE_CHECKING
 
 
-
+if TYPE_CHECKING:
+    from .agent_session import AgentSessionContextManager
 
 class Agent:
     def __init__(
@@ -91,9 +93,12 @@ class Agent:
         self._setup_stt()
         self._setup_turn_detection()
 
-
-
-    async def create_response(self, input: List[ResponseInputItemParam] | str, participant: Participant = None, use_processor_input: bool = True):
+    async def create_response(
+        self,
+        input: List[ResponseInputItemParam] | str,
+        participant: Participant = None,
+        use_processor_input: bool = True,
+    ):
         # gather all processor state
         processor_inputs = []
         if use_processor_input:
@@ -109,7 +114,6 @@ class Agent:
         logging.info("participant in create response is %s", participant)
         if self.conversation:
             for i in input:
-
                 if participant is not None:
                     user_id = participant.user_id
                 else:
@@ -125,9 +129,7 @@ class Agent:
         input = input + processor_inputs
         # TODO: this returns text, doesn't seem right
         llm_response = await self.llm.generate(input)
-        await self.queue.resume(
-            llm_response
-        )
+        await self.queue.resume(llm_response)
 
     def processor_inputs(self) -> List[ResponseInputItemParam]:
         """
@@ -248,7 +250,6 @@ class Agent:
 
             return AgentSessionContextManager(self)
 
-
     async def say(self, text):
         await self.queue.say_text(self, text)
 
@@ -271,8 +272,6 @@ class Agent:
             self._stt_setup = True
         else:
             self._stt_setup = False
-
-
 
     def _get_subscription_config(self):
         return TrackSubscriptionConfig(
@@ -309,7 +308,9 @@ class Agent:
         @self._connection.on("audio")
         async def on_audio_received(pcm: PcmData, participant: Participant):
             if not participant:
-                import pdb;pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
 
             if self.turn_detection:
                 await self.turn_detection.process_audio(pcm, participant.user_id)
@@ -421,7 +422,6 @@ class Agent:
             try:
                 video_frame = await asyncio.wait_for(track.recv(), timeout=5.0)
                 if video_frame:
-
                     if hasImageProcessers:
                         img = video_frame.to_image()
 

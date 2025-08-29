@@ -15,8 +15,6 @@ from getstream.plugins.openai.sts import OpenAIRealtime
 
 
 class OpenAIRealtimeModel:
-
-
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -52,7 +50,7 @@ class OpenAIRealtimeModel:
         self.turn_detection = turn_detection
         self.input_audio_transcription = input_audio_transcription
         self.kwargs = kwargs
-        
+
         # Mark this as an STS model
         self.sts = True
 

@@ -18,6 +18,7 @@ from stream_agents.llm import OpenAILLM
 from stream_agents.agents.agents import Agent
 from stream_agents.cli import start_dispatcher
 
+
 async def main() -> None:
     """Create a simple agent and join a call."""
 
@@ -38,8 +39,8 @@ async def main() -> None:
 
     # TODO: LLM class
     agent = Agent(
-        edge=StreamEdge(), # low latency edge. clients for React, iOS, Android, RN, Flutter etc.
-        agent_user=agent_user, # the user name etc for the agent
+        edge=StreamEdge(),  # low latency edge. clients for React, iOS, Android, RN, Flutter etc.
+        agent_user=agent_user,  # the user name etc for the agent
         # tts, llm, stt more. see the realtime example for sts
         llm=OpenAILLM(
             name="gpt-4o",
@@ -52,9 +53,6 @@ async def main() -> None:
         # processors can fetch extra data, check images/audio data or transform video
         processors=[YOLOPoseProcessor()],
     )
-
-
-
 
     try:
         # Join the call - this is the main functionality we're demonstrating

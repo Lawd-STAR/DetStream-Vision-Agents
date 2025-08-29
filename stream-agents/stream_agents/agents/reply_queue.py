@@ -1,7 +1,3 @@
-
-
-
-
 class ReplyQueue:
     """
     When a user interrupts the LLM, there are a few different behaviours that should be supported.

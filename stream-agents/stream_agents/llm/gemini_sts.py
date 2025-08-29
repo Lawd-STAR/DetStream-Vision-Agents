@@ -114,29 +114,30 @@ class GeminiLiveModel:
         config = {
             "response_modalities": self.response_modalities,
         }
-        
+
         if self.instructions:
             config["system_instruction"] = self.instructions
-            
+
         if self.tools:
             config["tools"] = self.tools
-            
+
         # Add any additional configuration
         config.update(self.kwargs)
 
         try:
             # Get the async context manager for Gemini Live API
             self._session_manager = self._client.aio.live.connect(
-                model=self.model,
-                config=config
+                model=self.model, config=config
             )
-            
+
             self._is_connected = True
-            connection = GeminiLiveConnection(self, call, agent_user_id, self._session_manager)
-            
+            connection = GeminiLiveConnection(
+                self, call, agent_user_id, self._session_manager
+            )
+
             self.logger.info("✅ Gemini Live connected successfully")
             return connection
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to connect to Gemini Live: {e}")
             raise
@@ -154,7 +155,9 @@ class GeminiLiveModel:
 class GeminiLiveConnection:
     """Connection wrapper for Gemini Live API."""
 
-    def __init__(self, sts_model: GeminiLiveModel, call, agent_user_id: str, session_manager):
+    def __init__(
+        self, sts_model: GeminiLiveModel, call, agent_user_id: str, session_manager
+    ):
         self.sts_model = sts_model
         self.call = call
         self.agent_user_id = agent_user_id
@@ -162,7 +165,7 @@ class GeminiLiveConnection:
         self.session = None
         self.logger = sts_model.logger
         self._audio_callbacks = []
-        
+
     async def __aenter__(self):
         """Enter the async context and establish the Gemini Live session."""
         self.session = await self.session_manager.__aenter__()
@@ -187,17 +190,17 @@ class GeminiLiveConnection:
         """Send an event to Gemini Live API."""
         if not self.session:
             raise RuntimeError("Not connected to Gemini Live")
-            
+
         # Handle different event types
         if event.get("type") == "input_audio_buffer.append":
             # Convert base64 audio to the format expected by Gemini
             audio_data = base64.b64decode(event["audio"])
-            
+
             # Send audio to Gemini Live
             await self.session.send_realtime_input(
                 audio=types.Blob(data=audio_data, mime_type="audio/pcm;rate=16000")
             )
-            
+
         else:
             self.logger.warning(f"Unhandled event type: {event.get('type')}")
 
@@ -205,9 +208,9 @@ class GeminiLiveConnection:
         """Send raw audio data to Gemini Live."""
         if not self.session:
             raise RuntimeError("Not connected to Gemini Live")
-        
+
         self.logger.debug(f"📤 Sending {len(audio_data)} bytes of audio to Gemini Live")
-        
+
         # Send audio directly to Gemini Live
         await self.session.send_realtime_input(
             audio=types.Blob(data=audio_data, mime_type="audio/pcm;rate=16000")
@@ -220,50 +223,65 @@ class GeminiLiveConnection:
         """Iterate over events from Gemini Live."""
         if not self.session:
             raise StopAsyncIteration
-            
+
         try:
             # Receive response from Gemini Live
             async for response in self.session.receive():
                 self.logger.debug(f"📥 Received Gemini Live response: {type(response)}")
-                
+
                 # Handle audio data
                 if response.data is not None:
-                    self.logger.info(f"🎵 Received audio data from Gemini Live: {len(response.data)} bytes")
+                    self.logger.info(
+                        f"🎵 Received audio data from Gemini Live: {len(response.data)} bytes"
+                    )
                     # Forward audio to registered callbacks
                     for callback in self._audio_callbacks:
                         try:
                             await callback(response.data)
                         except Exception as e:
                             self.logger.error(f"Error in audio callback: {e}")
-                
+
                 # Check for other response types
-                if hasattr(response, 'server_content') and response.server_content:
-                    if hasattr(response.server_content, 'model_turn') and response.server_content.model_turn:
+                if hasattr(response, "server_content") and response.server_content:
+                    if (
+                        hasattr(response.server_content, "model_turn")
+                        and response.server_content.model_turn
+                    ):
                         self.logger.debug("📝 Received model turn from Gemini Live")
-                    elif hasattr(response.server_content, 'turn_complete') and response.server_content.turn_complete:
+                    elif (
+                        hasattr(response.server_content, "turn_complete")
+                        and response.server_content.turn_complete
+                    ):
                         self.logger.debug("✅ Turn complete from Gemini Live")
-                
+
                 # Create a mock event structure for compatibility
                 class GeminiEvent:
                     def __init__(self, event_type: str, data: Any = None):
                         self.type = event_type
                         self.data = data
-                
+
                 # Return event based on response type
                 if response.data is not None:
                     return GeminiEvent("audio.data", response.data)
-                elif hasattr(response, 'server_content') and response.server_content:
-                    if hasattr(response.server_content, 'model_turn') and response.server_content.model_turn:
+                elif hasattr(response, "server_content") and response.server_content:
+                    if (
+                        hasattr(response.server_content, "model_turn")
+                        and response.server_content.model_turn
+                    ):
                         return GeminiEvent("response.audio_transcript.done")
-                    elif hasattr(response.server_content, 'turn_complete') and response.server_content.turn_complete:
+                    elif (
+                        hasattr(response.server_content, "turn_complete")
+                        and response.server_content.turn_complete
+                    ):
                         return GeminiEvent("response.done")
-                
+
                 # Default event
                 return GeminiEvent("session.updated")
-                
+
         except Exception as e:
             self.logger.error(f"Error receiving from Gemini Live: {e}")
             import traceback
+
             self.logger.error(traceback.format_exc())
             raise StopAsyncIteration
 

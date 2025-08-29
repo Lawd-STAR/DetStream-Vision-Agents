@@ -14,9 +14,13 @@ load_dotenv()
 async def start_agent() -> None:
     # Get Tavus configuration from environment
     tavus_api_key = os.getenv("TAVUS_KEY")
-    tavus_replica_id = os.getenv("TAVUS_REPLICA_ID", "rfe12d8b9597")  # Default from docs
-    tavus_persona_id = os.getenv("TAVUS_PERSONA_ID", "pdced222244b")  # Default from docs
-    
+    tavus_replica_id = os.getenv(
+        "TAVUS_REPLICA_ID", "rfe12d8b9597"
+    )  # Default from docs
+    tavus_persona_id = os.getenv(
+        "TAVUS_PERSONA_ID", "pdced222244b"
+    )  # Default from docs
+
     if not tavus_api_key:
         raise ValueError("TAVUS_KEY environment variable is required")
 
@@ -31,9 +35,9 @@ async def start_agent() -> None:
         persona_id=tavus_persona_id,
         conversation_name="Stream Video Avatar Session",
         auto_create=True,  # Automatically create Tavus conversation
-        auto_join=True,    # Automatically join Daily call
+        auto_join=True,  # Automatically join Daily call
         audio_only=False,  # Full video avatar experience
-        interval=0         # Process every frame for real-time streaming
+        interval=0,  # Process every frame for real-time streaming
     )
 
     # Log the Tavus conversation details
@@ -44,8 +48,8 @@ async def start_agent() -> None:
 
     # Create the agent with Tavus processor
     agent = Agent(
-        edge=StreamEdge(), # low latency edge. clients for React, iOS, Android, RN, Flutter etc.
-        agent_user=agent_user, # the user object for the agent (name, image etc)
+        edge=StreamEdge(),  # low latency edge. clients for React, iOS, Android, RN, Flutter etc.
+        agent_user=agent_user,  # the user object for the agent (name, image etc)
         # Enhanced LLM instructions for avatar interaction
         llm=OpenAILLM(
             name="gpt-4o",
@@ -54,8 +58,8 @@ async def start_agent() -> None:
         tts=ElevenLabsTTS(),
         stt=DeepgramSTT(),
         # Optional turn detection for better conversation flow
-        #turn_detection=FalTurnDetection(),
-        processors=[tavus_processor], # Tavus processor provides AI avatar video/audio
+        # turn_detection=FalTurnDetection(),
+        processors=[tavus_processor],  # Tavus processor provides AI avatar video/audio
     )
 
     # Create a call
@@ -71,7 +75,7 @@ async def start_agent() -> None:
     try:
         # Have the agent join the call/room
         with await agent.join(call):
-            await agent.finish() # run till the call ends
+            await agent.finish()  # run till the call ends
     except Exception as e:
         print(f"❌ Error during agent execution: {e}")
     finally:

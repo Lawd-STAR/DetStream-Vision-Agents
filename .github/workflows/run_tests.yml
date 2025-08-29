@@ -20,7 +20,8 @@ jobs:
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
     steps:
-      - uses: ./.github/actions/python-uv-setup
+      - name: Checkout
+        uses: actions/checkout@v5
       - name: Build matrix
         id: gen
         shell: bash
@@ -30,12 +31,16 @@ jobs:
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   lint:
-    name: Ruff lint
+    name: Ruff & mypy
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
       - uses: ./.github/actions/python-uv-setup
       - name: Run Ruff
         run: uv run ruff check .
+      - name: Typecheck (mypy)
+        run: uv run mypy .
 
   test:
     name: Py${{ matrix.python }} — ${{ matrix.plugin }} — -m "${{ inputs.marker }}"
@@ -49,5 +54,7 @@ jobs:
       PYTHONDONTWRITEBYTECODE: 1
       PLUGIN: ${{ matrix.plugin }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
       - uses: ./.github/actions/python-uv-setup
 

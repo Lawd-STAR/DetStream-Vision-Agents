@@ -49,6 +49,19 @@ uv run py.test plugins/*/tests/*.py -m "not integration"
 uv run ruff check --fix
 ```
 
+## Mypy type checks
+
+
+```
+uv run mypy --install-types --non-interactive -p stream_agents
+```
+
+```
+uv run mypy --install-types --non-interactive plugins
+uv run mypy --install-types --non-interactive plugins/xai
+```
+
+
 
 ## General Guidelines
 1. We are experimenting and moving fast. Things may break, that is fine for now, but before merging to main, check that your code is running and if required, has tests.

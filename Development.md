@@ -24,6 +24,32 @@ cp env.example .env
 uv run examples/01_simple_agent_example/01_simple_agent_example
 ```
 
+## Tests
+
+Integration test. (requires secrets in place)
+```
+uv run py.test -m "integration"
+```
+
+Everything other than integration
+
+```
+uv run py.test -m "not integration"
+```
+
+Plugin tests (TODO: not quite right. uv env is different for each plugin)
+
+```
+uv run py.test plugins/*/tests/*.py -m "not integration"
+```
+
+## Formatting
+
+```
+uv run ruff check --fix
+```
+
+
 ## General Guidelines
 1. We are experimenting and moving fast. Things may break, that is fine for now, but before merging to main, check that your code is running and if required, has tests.
 2. Communication: Things are moving quickly, communicate what you're working on and what's blocking early and frequently in #video_ai

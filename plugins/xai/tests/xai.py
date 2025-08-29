@@ -1,6 +1,5 @@
 import pytest
 from dotenv import load_dotenv
-import asyncio
 import sys
 import os
 

@@ -13,7 +13,6 @@ from stream_agents.processors import YOLOPoseProcessor
 from stream_agents.turn_detection import FalTurnDetection
 
 from stream_agents.edge.edge_transport import StreamEdge
-from stream_agents.processors.base_processor import ImageCapture, AudioLogger
 from stream_agents.utils import open_demo
 from stream_agents.llm import OpenAILLM
 from stream_agents.agents.agents import Agent

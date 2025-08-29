@@ -5,7 +5,6 @@ from uuid import uuid4
 from dotenv import load_dotenv
 from getstream.plugins import DeepgramSTT, ElevenLabsTTS
 from stream_agents.processors.tavus_processor import TavusProcessor
-from stream_agents.turn_detection import FalTurnDetection
 from stream_agents.llm import OpenAILLM
 from stream_agents import Agent, Stream, StreamEdge, start_dispatcher, open_demo
 
@@ -38,7 +37,7 @@ async def start_agent() -> None:
     )
 
     # Log the Tavus conversation details
-    print(f"🎭 Tavus conversation created!")
+    print("🎭 Tavus conversation created!")
     print(f"🔗 Conversation URL: {tavus_processor.conversation_url}")
     print(f"📺 Replica ID: {tavus_replica_id}")
     print(f"🤖 Persona ID: {tavus_persona_id}")
@@ -65,9 +64,9 @@ async def start_agent() -> None:
     # Open the demo UI
     open_demo(call)
 
-    print(f"🚀 Starting Tavus AI Avatar Agent...")
-    print(f"💡 The agent will stream AI avatar video/audio from Tavus")
-    print(f"🎥 Join the call to interact with your AI avatar!")
+    print("🚀 Starting Tavus AI Avatar Agent...")
+    print("💡 The agent will stream AI avatar video/audio from Tavus")
+    print("🎥 Join the call to interact with your AI avatar!")
 
     try:
         # Have the agent join the call/room

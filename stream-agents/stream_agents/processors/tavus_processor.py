@@ -1,20 +1,15 @@
 import asyncio
 import logging
 import requests
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any
 import numpy as np
-import daily
 from daily import CallClient, Daily, EventHandler
-import aiortc
 from aiortc import AudioStreamTrack, VideoStreamTrack
 import av
-from stream_agents.processors import BaseProcessor
 from stream_agents.processors.base_processor import (
     AudioVideoProcessor,
     AudioPublisherMixin,
-    VideoPublisherMixin,
-    AudioProcessorMixin,
-    VideoProcessorMixin
+    VideoPublisherMixin
 )
 
 
@@ -481,7 +476,7 @@ class TavusProcessor(AudioVideoProcessor, AudioPublisherMixin, VideoPublisherMix
             self.conversation_id = self.conversation_data.get('conversation_id')
             self.conversation_url = self.conversation_data.get('conversation_url')
             
-            self.logger.info(f"Tavus conversation created successfully:")
+            self.logger.info("Tavus conversation created successfully:")
             self.logger.info(f"  - ID: {self.conversation_id}")
             self.logger.info(f"  - URL: {self.conversation_url}")
             
@@ -546,17 +541,17 @@ class TavusProcessor(AudioVideoProcessor, AudioPublisherMixin, VideoPublisherMix
             return
         
         try:
-            self.logger.info(f"🔗 Starting Daily call join process...")
+            self.logger.info("🔗 Starting Daily call join process...")
             self.logger.info(f"🔗 Conversation URL: {self.conversation_url}")
             
             # Create event handler
-            self.logger.info(f"🔧 Creating Daily event handler...")
+            self.logger.info("🔧 Creating Daily event handler...")
             self.event_handler = TavusDailyEventHandler(self)
             
             # Create Daily client with event handler
-            self.logger.info(f"🔧 Creating Daily CallClient with event handler...")
+            self.logger.info("🔧 Creating Daily CallClient with event handler...")
             self.daily_client = CallClient(event_handler=self.event_handler)
-            self.logger.info(f"✅ Daily CallClient created successfully")
+            self.logger.info("✅ Daily CallClient created successfully")
             
             # Join the call with completion callback
             def join_completion(data, error):
@@ -569,7 +564,7 @@ class TavusProcessor(AudioVideoProcessor, AudioPublisherMixin, VideoPublisherMix
                     self._call_joined = True
             
             # Join the call (this is synchronous in the Daily Python API)
-            self.logger.info(f"📞 Calling daily_client.join()...")
+            self.logger.info("📞 Calling daily_client.join()...")
             self.logger.info(f"📞 Meeting URL: {self.conversation_url}")
             
             # The join method is synchronous but events are async
@@ -578,7 +573,7 @@ class TavusProcessor(AudioVideoProcessor, AudioPublisherMixin, VideoPublisherMix
                 completion=join_completion
             )
 
-            self.logger.info(f"📞 Daily call join method called successfully")
+            self.logger.info("📞 Daily call join method called successfully")
             
             # Wait longer for events to process and connection to establish
             for i in range(10):  # Wait up to 10 seconds
@@ -673,7 +668,7 @@ class TavusProcessor(AudioVideoProcessor, AudioPublisherMixin, VideoPublisherMix
                     test_frame = await self._create_test_video_frame()
                     if test_frame:
                         await self.daily_video_track.add_video_frame(test_frame)
-                        self.logger.debug(f"🎥 Added test video frame to track")
+                        self.logger.debug("🎥 Added test video frame to track")
                     
                     await asyncio.sleep(1/30)  # 30 FPS
                 else:

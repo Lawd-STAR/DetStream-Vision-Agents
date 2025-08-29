@@ -9,7 +9,6 @@ and lifecycle management.
 import asyncio
 import logging
 import signal
-import sys
 from typing import Callable, Awaitable, Optional
 
 import click

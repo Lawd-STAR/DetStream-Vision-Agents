@@ -7,16 +7,10 @@ with the Agent class for Speech-to-Speech functionality with native audio mode.
 
 from __future__ import annotations
 
-import asyncio
 import base64
-import json
 import logging
 import os
-import wave
-import io
-from typing import Any, Dict, List, Optional, AsyncIterator
-import websockets
-import numpy as np
+from typing import Any, Dict, List, Optional
 
 try:
     from google import genai

@@ -8,10 +8,9 @@ environment variable to be set.
 import pytest
 import os
 from dotenv import load_dotenv
-from unittest.mock import patch
 import requests
 
-from stream_agents.processors.tavus_processor import TavusClient, TavusProcessor
+from stream_agents.processors.tavus_processor import TavusClient
 
 
 # Load environment variables

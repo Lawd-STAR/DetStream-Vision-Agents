@@ -114,7 +114,7 @@ class AudioLogger(AudioVideoProcessor, AudioProcessorMixin):
 
     async def process_audio(self, audio_data: bytes, user_id: str, metadata: dict = None) -> None:
         """Log audio data information."""
-        current_time = asyncio.get_event_loop().time()
+        asyncio.get_event_loop().time()
 
         if self.should_process():
             self.audio_count += 1

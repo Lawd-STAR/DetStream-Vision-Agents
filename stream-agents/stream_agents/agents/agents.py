@@ -5,7 +5,6 @@ from contextlib import nullcontext
 from typing import Optional, List, Any
 from uuid import uuid4
 
-from aiohttp import ClientSession
 from aiortc import VideoStreamTrack
 from openai.types.responses import EasyInputMessageParam, ResponseInputItemParam
 
@@ -230,7 +229,7 @@ class Agent:
                         self.logger.error(traceback.format_exc())
 
                 # Start STS event processing in background
-                sts_task = asyncio.create_task(process_sts_events())
+                asyncio.create_task(process_sts_events())
 
             # Send initial greeting, if the LLM is configured to do so
             if self.llm:
@@ -489,7 +488,7 @@ class Agent:
 
     async def _on_stt_error(self, error):
         """Handle STT service errors."""
-        print("HEY ERROR", error);
+        print("HEY ERROR", error)
         self.logger.error(f"❌ STT Error: {error}")
 
     async def _process_transcription(

@@ -18,7 +18,7 @@ from typing import Optional, Dict, Any
 from PIL import Image
 from aiortc import VideoStreamTrack
 import av
-from openai.types.responses import ResponseInputItemParam, EasyInputMessageParam
+from openai.types.responses import ResponseInputItemParam
 
 from .base_processor import (
     AudioVideoProcessor,
@@ -238,7 +238,7 @@ class YOLOPoseProcessor(
             if self._video_track:
                 self._last_frame = annotated_image
                 await self._video_track.add_frame(annotated_image)
-                logger.debug(f"🎥 Published pose-annotated frame to video track")
+                logger.debug("🎥 Published pose-annotated frame to video track")
 
             logger.debug(f"🤖 Processed pose detection for user {user_id}")
 

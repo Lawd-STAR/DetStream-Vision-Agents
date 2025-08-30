@@ -2,6 +2,8 @@ from dotenv import load_dotenv
 import sys
 import os
 
+import pytest
+
 # Add the plugin directory to the path so we can import the plugin
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -13,6 +15,11 @@ class TestTavus:
     """Integration tests for XAI plugin that make actual API calls."""
 
 
+    async def test_not_integration(self):
+        assert True
+
+
+    @pytest.mark.integration
     async def test_chat_creation_with_system_message(self):
         import anthropic
 

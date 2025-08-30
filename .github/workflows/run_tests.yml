@@ -6,13 +6,10 @@ on:
         description: 'pytest -m expression (e.g., `not integration` or `integration`)'
         required: true
         type: string
-      extra-args:
-        description: 'Extra pytest args (optional)'
-        required: false
-        default: ''
-        type: string
     secrets: {}
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   lint:
     name: Ruff & mypy
@@ -37,7 +34,7 @@ jobs:
         uses: actions/checkout@v5
       - uses: ./.github/actions/python-uv-setup
       - name: Run test
-        run: uv run py.test -m "${{ inputs.marker }}"
+        run: uv run pytest -n auto -m "${{ inputs.marker }}"
       - name: Run plugin test
-        run: uv run py.test -m "${{ inputs.marker }}"
+        run: uv run pytest plugins/*/tests/*.py -n auto -m "${{ inputs.marker }}"
 

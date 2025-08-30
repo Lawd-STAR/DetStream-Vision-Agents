@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Protocol, Any, List
+from typing import Protocol, Any, List, Optional
 from enum import Enum
 
 import aiortc
@@ -125,7 +125,7 @@ class AudioVideoProcessor(BaseProcessor):
         current_time = asyncio.get_event_loop().time()
 
         if current_time - self.last_process_time >= self.interval:
-            self.last_process_time = current_time
+            self.last_process_time = int(current_time)
             return True
         return False
 
@@ -137,7 +137,7 @@ class AudioLogger(AudioVideoProcessor, AudioProcessorMixin):
         self.last_audio_time = 0
 
     async def process_audio(
-        self, audio_data: bytes, user_id: str, metadata: dict = None
+        self, audio_data: bytes, user_id: str, metadata: Optional[dict[Any, Any]] = None
     ) -> None:
         """Log audio data information."""
         asyncio.get_event_loop().time()
@@ -157,7 +157,7 @@ class ImageCapture(AudioVideoProcessor, ImageProcessorMixin):
         self, output_dir: str = "captured_frames", interval: int = 3, *args, **kwargs
     ):
         super().__init__(
-            interval, receive_audio=False, receive_video=True, *args, **kwargs
+            interval=interval, receive_audio=False, receive_video=True
         )
         self.output_dir = Path(output_dir)
         self.frame_count = 0
@@ -167,7 +167,7 @@ class ImageCapture(AudioVideoProcessor, ImageProcessorMixin):
         logging.info(f"📁 Saving captured frames to: {self.output_dir.absolute()}")
 
     async def process_image(
-        self, image: Image.Image, user_id: str, metadata: dict = None
+        self, image: Image.Image, user_id: str, metadata: Optional[dict[Any, Any]] = None
     ):
         # Check if enough time has passed since last capture
         if not self.should_process():

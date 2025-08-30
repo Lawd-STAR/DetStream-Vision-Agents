@@ -85,9 +85,9 @@ class TavusDailyEventHandler(EventHandler):
         if not error:
             self.logger.info(f"🛑 Track stopped: {data}")
 
-    def on_error(self, data, error):
+    def on_error(self, message: str) -> None:
         """Handle Daily call errors."""
-        self.logger.error(f"❌ Daily call error: {error}")
+        self.logger.error(f"❌ Daily call error: {message}")
 
 
 class DailyAudioTrack(AudioStreamTrack):
@@ -95,7 +95,7 @@ class DailyAudioTrack(AudioStreamTrack):
 
     def __init__(self):
         super().__init__()
-        self.audio_queue = asyncio.Queue(maxsize=50)
+        self.audio_queue: asyncio.Queue[av.AudioFrame] = asyncio.Queue(maxsize=50)
         self._stopped = False
         self.logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ class DailyVideoTrack(VideoStreamTrack):
 
     def __init__(self):
         super().__init__()
-        self.frame_queue = asyncio.Queue(maxsize=10)
+        self.frame_queue: asyncio.Queue[av.VideoFrame] = asyncio.Queue(maxsize=10)
         self._stopped = False
         self.logger = logging.getLogger(__name__)
         # Default black frame
@@ -286,7 +286,7 @@ class TavusClient:
         if callback_url:
             payload["callback_url"] = callback_url
         if audio_only:
-            payload["audio_only"] = audio_only
+            payload["audio_only"] = str(audio_only)
 
         # Add any additional parameters
         payload.update(kwargs)
@@ -341,7 +341,8 @@ class TavusClient:
                         f"Could not parse error response as JSON: {json_error}"
                     )
                     self.logger.error(f"Raw response text: {e.response.text}")
-                    self.logger.error(f"Response content: {e.response.content}")
+                    content_str = e.response.content.decode('utf-8', errors='replace')
+                    self.logger.error(f"Response content: {content_str}")
             else:
                 self.logger.error("No response object available in exception")
 
@@ -619,7 +620,7 @@ class TavusProcessor(AudioVideoProcessor, AudioPublisherMixin, VideoPublisherMix
 
             # Log current participants and start forwarding if we find the Tavus replica
             try:
-                participants = self.daily_client.participants()
+                participants = self.daily_client.participants() if self.daily_client else {}
                 self.logger.info(f"📊 Current participants: {participants}")
 
                 # Look for the Tavus replica participant
@@ -669,7 +670,7 @@ class TavusProcessor(AudioVideoProcessor, AudioPublisherMixin, VideoPublisherMix
         try:
             while self._call_joined and self.daily_audio_track:
                 # Get participants and their tracks
-                participants = self.daily_client.participants()
+                participants = self.daily_client.participants() if self.daily_client else {}
                 participant = participants.get(participant_id)
 
                 if not participant:
@@ -699,7 +700,7 @@ class TavusProcessor(AudioVideoProcessor, AudioPublisherMixin, VideoPublisherMix
         try:
             while self._call_joined and self.daily_video_track:
                 # Get participants and their tracks
-                participants = self.daily_client.participants()
+                participants = self.daily_client.participants() if self.daily_client else {}
                 participant = participants.get(participant_id)
 
                 if not participant:

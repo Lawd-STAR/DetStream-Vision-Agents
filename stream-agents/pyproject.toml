@@ -43,6 +43,9 @@ dev = ["pytest", "mypy", "ruff"]
 xai = ["stream-agents-plugin-xai"]
 
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.version]
 path = "stream-agents/getstream/agents/version.py"
 
@@ -55,4 +58,3 @@ include = ["/stream-agents"]
 
 [tool.uv.sources]
 "stream-agents" = {path = "../../stream-agents", editable=true}
-"getstream" = {path = "../../stream-py", editable=true}

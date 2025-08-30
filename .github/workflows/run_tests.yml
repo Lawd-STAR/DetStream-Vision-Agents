@@ -39,8 +39,10 @@ jobs:
       - uses: ./.github/actions/python-uv-setup
       - name: Run Ruff
         run: uv run ruff check .
-      - name: Typecheck (mypy)
-        run: uv run mypy .
+      - name: Mypy main
+        run: uv run mypy --install-types --non-interactive -p stream_agents
+      - name: Mypy plugins
+        run: uv run mypy --install-types --non-interactive plugins
 
   test:
     name: Py${{ matrix.python }} — ${{ matrix.plugin }} — -m "${{ inputs.marker }}"

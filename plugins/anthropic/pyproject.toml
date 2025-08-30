@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "stream-agents-plugin-anthropic"
+description = "XAI for stream agents"
+dynamic = ["version"]
+license = "Apache-2.0"
+requires-python = ">=3.9.0"
+dependencies = [
+    "stream-agents",
+    "anthropic",
+]
+
+
+[tool.hatch.version]
+path = "./version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["getstream"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/stream-agents"]

@@ -18,7 +18,7 @@ from typing import Optional, Dict, Any
 from PIL import Image
 from aiortc import VideoStreamTrack
 import av
-from openai.types.responses import ResponseInputItemParam
+
 
 from .base_processor import (
     AudioVideoProcessor,
@@ -44,7 +44,7 @@ class YOLOPoseVideoTrack(VideoStreamTrack):
 
     def __init__(self):
         super().__init__()
-        self.frame_queue = asyncio.Queue(maxsize=10)
+        self.frame_queue: asyncio.Queue[Image.Image] = asyncio.Queue(maxsize=10)
         self.last_frame = Image.new("RGB", (640, 480), color="black")
         self._stopped = False
         # Set video quality parameters
@@ -157,7 +157,7 @@ class YOLOPoseProcessor(
             enable_wrist_highlights: Whether to highlight wrist positions
         """
         super().__init__(
-            interval=interval, receive_audio=False, receive_video=True, *args, **kwargs
+            interval=interval, receive_audio=False, receive_video=True
         )
 
         if not YOLO_AVAILABLE:
@@ -172,7 +172,7 @@ class YOLOPoseProcessor(
         self.device = device
         self.enable_hand_tracking = enable_hand_tracking
         self.enable_wrist_highlights = enable_wrist_highlights
-        self._last_frame = None
+        self._last_frame: Optional[Image.Image] = None
 
         # Initialize YOLO model
         self._load_model()
@@ -184,7 +184,7 @@ class YOLOPoseProcessor(
         self._shutdown = False
 
         # Video track for publishing (if used as video publisher)
-        self._video_track = None
+        self._video_track: Optional[YOLOPoseVideoTrack] = None
 
         logger.info(f"🤖 YOLO Pose Processor initialized with model: {model_path}")
 
@@ -214,7 +214,7 @@ class YOLOPoseProcessor(
         return self._video_track
 
     async def process_image(
-        self, image: Image.Image, user_id: str, metadata: dict = None
+        self, image: Image.Image, user_id: str, metadata: Optional[dict[Any, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Process a single image with pose detection.
@@ -336,7 +336,7 @@ class YOLOPoseProcessor(
 
             # Apply pose results to current frame
             annotated_frame = frame_array.copy()
-            pose_data = {"persons": []}
+            pose_data: Dict[str, Any] = {"persons": []}
 
             # Process each detected person
             for person_idx, result in enumerate(pose_results):
@@ -537,7 +537,8 @@ class YOLOPoseProcessor(
             "status": "active" if not self._shutdown else "shutdown",
         }
 
-    def input(self) -> ResponseInputItemParam | None:
+    def input(self) -> Optional[Dict[str, Any]]:
+        """Return input for OpenAI API."""
         if self._last_frame:
             buffered = io.BytesIO()
             self._last_frame.save(buffered, format="PNG")
@@ -546,18 +547,10 @@ class YOLOPoseProcessor(
             # TODO: this should be a utility method
             # Return the official OpenAI responses.create format
             return {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": "Current video frame from pose detection processor.",
-                    },
-                    {
-                        "type": "input_image",
-                        "image_url": f"data:image/png;base64,{image_data}",
-                    },
-                ],
+                "type": "input_image",
+                "image_url": f"data:image/png;base64,{image_data}",
             }
+        return None
 
     def cleanup(self):
         """Clean up resources."""

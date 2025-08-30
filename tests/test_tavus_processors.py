@@ -57,4 +57,3 @@ class TestTavusClientIntegration:
 
     def test_one_plus_one(self, api_key):
         assert 2 == 2
-        

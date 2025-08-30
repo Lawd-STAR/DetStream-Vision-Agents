@@ -14,22 +14,6 @@ on:
     secrets: {}
 
 jobs:
-  discover-plugins:
-    name: Discover plugins
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.gen.outputs.matrix }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Build matrix
-        id: gen
-        shell: bash
-        run: |
-          plugins="$(ls -1d plugins/* 2>/dev/null | xargs -n1 basename | jq -R . | jq -s .)" || plugins="[]"
-          matrix=$(jq -n --argjson plugins "$plugins" '{plugin: (["core"] + $plugins), python: ["3.10","3.11","3.12"]}')
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-
   lint:
     name: Ruff & mypy
     runs-on: ubuntu-latest
@@ -45,18 +29,15 @@ jobs:
         run: uv run mypy --install-types --non-interactive plugins
 
   test:
-    name: Py${{ matrix.python }} — ${{ matrix.plugin }} — -m "${{ inputs.marker }}"
-    needs: discover-plugins
+    name: Test "${{ inputs.marker }}"
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.discover-plugins.outputs.matrix) }}
     timeout-minutes: 30
-    env:
-      PYTHONDONTWRITEBYTECODE: 1
-      PLUGIN: ${{ matrix.plugin }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
       - uses: ./.github/actions/python-uv-setup
+      - name: Run test
+        run: uv run py.test -m "${{ inputs.marker }}"
+      - name: Run plugin test
+        run: uv run py.test -m "${{ inputs.marker }}"
 

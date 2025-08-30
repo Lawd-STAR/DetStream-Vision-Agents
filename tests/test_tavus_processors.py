@@ -8,7 +8,6 @@ environment variable to be set.
 import pytest
 import os
 from dotenv import load_dotenv
-import requests
 
 from stream_agents.processors.tavus_processor import TavusClient
 

@@ -30,8 +30,10 @@ class ReplyQueue:
 
     async def say_text(self, text):
         # TODO: Stream and buffer
-        await self.agent.tts.send(text)
+        if self.agent.tts is not None:
+            await self.agent.tts.send(text)
 
     async def send_audio(self, pcm):
         # TODO: stream & buffer
-        await self.agent._audio_track.send_audio(pcm)
+        if self.agent._audio_track is not None:
+            await self.agent._audio_track.send_audio(pcm)

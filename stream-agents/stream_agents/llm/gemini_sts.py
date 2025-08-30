@@ -16,8 +16,8 @@ try:
     from google import genai
     from google.genai import types
 except ImportError:
-    genai = None
-    types = None
+    genai = None  # type: ignore
+    types = None  # type: ignore
 
 
 class GeminiLiveModel:
@@ -111,15 +111,15 @@ class GeminiLiveModel:
         self.logger.info(f"Connecting Gemini Live to call {call.id}")
 
         # Build configuration for Gemini Live
-        config = {
+        config: Dict[str, Any] = {
             "response_modalities": self.response_modalities,
         }
 
         if self.instructions:
-            config["system_instruction"] = self.instructions
+            config["system_instruction"] = [self.instructions]
 
         if self.tools:
-            config["tools"] = self.tools
+            config["tools"] = [self.tools]
 
         # Add any additional configuration
         config.update(self.kwargs)
@@ -127,7 +127,7 @@ class GeminiLiveModel:
         try:
             # Get the async context manager for Gemini Live API
             self._session_manager = self._client.aio.live.connect(
-                model=self.model, config=config
+                model=self.model, config=config  # type: ignore
             )
 
             self._is_connected = True
@@ -164,7 +164,7 @@ class GeminiLiveConnection:
         self.session_manager = session_manager
         self.session = None
         self.logger = sts_model.logger
-        self._audio_callbacks = []
+        self._audio_callbacks: List[Any] = []
 
     async def __aenter__(self):
         """Enter the async context and establish the Gemini Live session."""

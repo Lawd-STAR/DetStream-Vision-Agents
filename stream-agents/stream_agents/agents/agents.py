@@ -86,6 +86,9 @@ class Agent:
         self.processors = processors or []
         self.queue = ReplyQueue(self)
 
+        # Initialize state variables
+        self._is_running: bool = False
+
         # validation time
         self._validate_configuration()
 
@@ -109,7 +112,7 @@ class Agent:
             role = "system"
             if participant is not None:
                 role = "user"
-            input = [EasyInputMessageParam(content=input, role=role, type="text")]
+            input = [EasyInputMessageParam(content=input, role=role, type="message")]
 
         logging.info("participant in create response is %s", participant)
         if self.conversation:
@@ -123,11 +126,19 @@ class Agent:
                         user_id = self.agent_user.id
 
                 if i["type"] == "message":
-                    self.conversation.add_message(i["content"], user_id)
+                    content = i["content"]
+                    if isinstance(content, str):
+                        self.conversation.add_message(content, user_id)
+                    else:
+                        # Convert complex content to string representation
+                        self.conversation.add_message(str(content), user_id)
 
         input = input + processor_inputs
         # TODO: this returns text, doesn't seem right
-        llm_response = await self.llm.generate(input)
+        if self.llm is not None:
+            llm_response = await self.llm.generate(input)
+        else:
+            llm_response = "No LLM configured"
         await self.queue.resume(llm_response)
 
     def processor_inputs(self) -> List[ResponseInputItemParam]:
@@ -174,7 +185,7 @@ class Agent:
             self.logger.info("🎤 Using traditional STT/TTS mode")
 
         stsContextManager = None
-        if self.sts_mode:
+        if self.sts_mode and self.llm is not None:
             stsContextManager = await self.llm.connect(call, self.agent_user.id)
 
         # Traditional mode - use WebRTC connection
@@ -220,11 +231,12 @@ class Agent:
                 async def process_sts_events():
                     try:
                         # TODO: some method to receive audio
-                        async for event in stsConnection:
-                            # also see https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/speech_stopped
-                            # TODO: implement https://github.com/openai/openai-python/blob/main/examples/realtime/push_to_talk_app.py#L167
-                            self.logger.debug(f"🔔 STS Event: {event.type}")
-                            # Handle any STS-specific events here if needed
+                        if stsConnection is not None:
+                            async for event in stsConnection:
+                                # also see https://platform.openai.com/docs/api-reference/realtime_server_events/input_audio_buffer/speech_stopped
+                                # TODO: implement https://github.com/openai/openai-python/blob/main/examples/realtime/push_to_talk_app.py#L167
+                                self.logger.debug(f"🔔 STS Event: {event.type}")
+                                # Handle any STS-specific events here if needed
                     except Exception as e:
                         self.logger.error(f"❌ Error processing STS events: {e}")
                         self.logger.error(traceback.format_exc())
@@ -233,8 +245,8 @@ class Agent:
                 asyncio.create_task(process_sts_events())
 
             # Send initial greeting, if the LLM is configured to do so
-            if self.llm:
-                self.llm.conversation_started(self)
+            if self.llm and hasattr(self.llm, 'conversation_started'):
+                await self.llm.conversation_started(self)
 
             # Keep the agent running and listening
             self.logger.info("🎧 Agent is active - press Ctrl+C to stop")
@@ -250,7 +262,7 @@ class Agent:
             return AgentSessionContextManager(self)
 
     async def say(self, text):
-        await self.queue.say_text(self, text)
+        await self.queue.say_text(text)
 
     async def play_audio(self, pcm):
         await self.queue.send_audio(pcm)
@@ -311,7 +323,7 @@ class Agent:
 
                 pdb.set_trace()
 
-            if self.turn_detection:
+            if self.turn_detection and hasattr(self.turn_detection, 'process_audio'):
                 await self.turn_detection.process_audio(pcm, participant.user_id)
 
             await self.reply_to_audio(pcm, participant)
@@ -364,7 +376,7 @@ class Agent:
                 self.logger.error(f"Error processing audio for processors: {e}")
 
             # when in STS mode call the STS directly
-            if self.sts_mode:
+            if self.sts_mode and self.llm is not None:
                 if hasattr(self.llm, "send_audio"):
                     await self.llm.send_audio(pcm_data, participant)
             else:
@@ -610,7 +622,8 @@ class Agent:
                         f"🎵 Forwarding {len(audio_data)} bytes of STS audio to WebRTC"
                     )
                     # Send audio data to the audio track
-                    await self._audio_track.send_audio(audio_data)
+                    if self._audio_track is not None:
+                        await self._audio_track.send_audio(audio_data)
                     self.logger.debug("✅ Audio forwarded successfully")
                 except Exception as e:
                     self.logger.error(f"Error forwarding STS audio: {e}")

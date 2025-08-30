@@ -160,6 +160,13 @@ class OpenAILLM:
                 {"role": "system", "content": self.instructions},
                 {"role": "user", "content": prompt},
             ]
+            return await self.generate_chat(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stop=stop,
+                **kwargs,
+            )
         else:
             # Handle list of ResponseInputItemParam objects
             # Check if this looks like the official OpenAI responses.create format

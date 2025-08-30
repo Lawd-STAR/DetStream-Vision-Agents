@@ -71,7 +71,8 @@ async def start_dispatcher(
 
     try:
         # Start the agent in a task
-        agent_task = asyncio.create_task(agent_func())
+        agent_coro = agent_func()
+        agent_task = asyncio.create_task(agent_coro)
         logger.info("🤖 Agent started successfully")
 
         # Wait for either the agent to complete or shutdown signal

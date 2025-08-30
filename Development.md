@@ -57,8 +57,8 @@ uv run mypy --install-types --non-interactive -p stream_agents
 ```
 
 ```
-uv run mypy --install-types --non-interactive plugins
-uv run mypy --install-types --non-interactive plugins/xai
+uv run mypy --install-types --non-interactive --explicit-package-bases plugins
+uv run mypy --install-types --non-interactive --explicit-package-bases plugins/xai
 ```
 
 ## Release

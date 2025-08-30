@@ -88,6 +88,12 @@ class Agent:
 
         # Initialize state variables
         self._is_running: bool = False
+        self._current_frame = None
+        self._interval_task = None
+        self._callback_executed = False
+        self._connection: Optional[rtc.RTCConnection] = None
+        self._audio_track: Optional[audio_track.AudioStreamTrack] = None
+        self._video_track: Optional[VideoStreamTrack] = None
 
         # validation time
         self._validate_configuration()
@@ -109,10 +115,10 @@ class Agent:
 
         # standardize on input
         if isinstance(input, str):
-            role = "system"
             if participant is not None:
-                role = "user"
-            input = [EasyInputMessageParam(content=input, role=role, type="message")]
+                input = [EasyInputMessageParam(content=input, role="user", type="message")]
+            else:
+                input = [EasyInputMessageParam(content=input, role="system", type="message")]
 
         logging.info("participant in create response is %s", participant)
         if self.conversation:
@@ -402,6 +408,10 @@ class Agent:
         self.logger.info(f"🎥 Processing VIDEO track: {track_id}")
 
         # Subscribe to the video track
+        if self._connection is None:
+            self.logger.error("❌ No active connection")
+            return
+        
         track = self._connection.subscriber_pc.add_track_subscriber(track_id)
         if not track:
             self.logger.error(f"❌ Failed to subscribe to track: {track_id}")
@@ -585,15 +595,7 @@ class Agent:
                 )
 
     def _prepare_rtc(self):
-        # Initialize common variables
-        self._current_frame = None
-        self._interval_task = None
-        self._is_running = False
-        self._callback_executed = False
-
-        self._connection: Optional[rtc.RTCConnection] = None
-        self._audio_track: Optional[audio_track.AudioStreamTrack] = None
-        self._video_track: Optional[VideoStreamTrack] = None
+        # Variables are now initialized in __init__
 
         # Set up audio track if TTS is available
         if self.publish_audio:

@@ -9,7 +9,7 @@ and lifecycle management.
 import asyncio
 import logging
 import signal
-from typing import Callable, Awaitable, Optional
+from typing import Any, Callable, Optional, Coroutine
 
 import click
 
@@ -47,7 +47,7 @@ def setup_signal_handlers() -> None:
 
 
 async def start_dispatcher(
-    agent_func: Callable[[], Awaitable[None]],
+    agent_func: Callable[[], Coroutine[Any, Any, None]],
     *,
     log_level: str = "INFO",
     shutdown_timeout: float = 30.0,
@@ -71,8 +71,7 @@ async def start_dispatcher(
 
     try:
         # Start the agent in a task
-        agent_coro = agent_func()
-        agent_task = asyncio.create_task(agent_coro)
+        agent_task = asyncio.create_task(agent_func())
         logger.info("🤖 Agent started successfully")
 
         # Wait for either the agent to complete or shutdown signal

@@ -26,7 +26,7 @@ jobs:
       - name: Mypy main
         run: uv run mypy --install-types --non-interactive -p stream_agents
       - name: Mypy plugins
-        run: uv run mypy --install-types --non-interactive plugins
+        run: uv run mypy --install-types --non-interactive --explicit-package-bases plugins
 
   test:
     name: Test "${{ inputs.marker }}"

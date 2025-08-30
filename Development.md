@@ -43,13 +43,21 @@ Plugin tests (TODO: not quite right. uv env is different for each plugin)
 uv run py.test plugins/*/tests/*.py -m "not integration"
 ```
 
-## Formatting
+### Check
+
+Shortcut to ruff, mypy and non integration tests:
+
+```
+uv run python dev.py check
+```
+
+### Formatting
 
 ```
 uv run ruff check --fix
 ```
 
-## Mypy type checks
+### Mypy type checks
 
 
 ```

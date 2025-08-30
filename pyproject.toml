@@ -1,4 +1,7 @@
 
+[build-system]
+requires = ["hatchling", "hatch-vcs", "setuptools-scm"]
+build-backend = "hatchling.build"
 
 
 
@@ -17,8 +20,15 @@ dev = [
     "pytest-asyncio",
     "python-dotenv",
     "pip>=25.2",
-    "hatch",
+    "hatch-vcs",
+    "hatchling",
 ]
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { root = "..", search_parent_directories = true, fallback_version = "0.0.0" }
 
 
 

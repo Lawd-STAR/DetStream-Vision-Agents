@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "stream-agents"
 description = "Open video agents. Build low latency video and voice agents on any realtime edge network."
-readme = "../README.md"
+readme = "README.md"
 keywords = ["video AI", "AI", "voice AI", "video agents", "voice agents", "agents", "AI"]
 dynamic = ["version"]
 

@@ -19,6 +19,7 @@ dev = [
     { name = "mypy" },
     { name = "pip", specifier = ">=25.2" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "python-dotenv" },
     { name = "ruff" },
 ]

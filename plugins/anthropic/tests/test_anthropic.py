@@ -14,7 +14,6 @@ class TestTavus:
     """Integration tests for XAI plugin that make actual API calls."""
 
 
-    @pytest.mark.asyncio
     async def test_chat_creation_with_system_message(self):
         import anthropic
 

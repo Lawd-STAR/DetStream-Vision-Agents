@@ -61,6 +61,11 @@ uv run mypy --install-types --non-interactive plugins
 uv run mypy --install-types --non-interactive plugins/xai
 ```
 
+## Release
+
+```
+git tag -a v0.0.1 -m "Release 0.0.1" && git push --tags
+```
 
 
 ## General Guidelines

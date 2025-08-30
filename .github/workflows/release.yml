@@ -12,7 +12,6 @@ jobs:
     uses: ./.github/workflows/run_tests.yml
     with:
       marker: 'integration'
-      extra-args: ''
     secrets: inherit
 
   build-core:

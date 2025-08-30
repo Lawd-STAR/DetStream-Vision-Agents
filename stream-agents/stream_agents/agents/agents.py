@@ -117,10 +117,9 @@ class Agent:
                 if participant is not None:
                     user_id = participant.user_id
                 else:
-                    if i["role"] == "assistant":
+                    if i.get("role") == "assistant":
                         user_id = self.agent_user.id
                     else:
-                        #
                         user_id = self.agent_user.id
 
                 if i["type"] == "message":

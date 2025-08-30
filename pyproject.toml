@@ -16,6 +16,7 @@ dev = [
     "pytest",
     "python-dotenv",
     "pip>=25.2",
+    "hatch",
 ]
 
 [tool.mypy]

@@ -5,7 +5,8 @@ Video/Vision AI agents on [Stream's edge network](https://getstream.io/video/).
 -  **Video AI**: Built for real-time video AI. Combine Yolo, Roboflow and others with realtime models
 -  **Low Latency**: Quickly join (500ms) and fast audio latency (30ms)
 -  **Open**: Built by Stream, but use any video edge network that you like
--  **Voice & Chat**: Conversation history and turn keeping in addition to video AI
+-  **Voice & Chat**: Store & query conversation history
+-  **Native APIs**: Native SDK methods from OpenAI (create response), Gemini (generate) and Claude (create message). So you're never behind on the latest features
 
 Open Agent library. Goal is to support most of our video/audio competitors. (See adding support section)
 SDKs for React, Android, iOS, Flutter, React, React Native and Unity.

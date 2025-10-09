@@ -157,9 +157,9 @@ class StreamEdge(EdgeTransport):
             return
 
         participant = event.participant
-        if event.participant.user_id:
-            user_id = event.participant.user_id
-            session_id = event.participant.session_id
+        if participant and participant.user_id:
+            user_id = participant.user_id
+            session_id = participant.session_id
         else:
             user_id = event.payload.user_id
             session_id = event.payload.session_id

@@ -64,7 +64,7 @@ class StreamEdge(EdgeTransport):
         # Temporary storage for tracks before SFU confirms their type
         # track_id -> (user_id, session_id, webrtc_type_string)
         self._pending_tracks: dict = {}
-        
+
         # Register event handlers
         self.events.subscribe(self._on_track_published)
         self.events.subscribe(self._on_track_removed)
@@ -82,6 +82,8 @@ class StreamEdge(EdgeTransport):
 
     async def _on_track_published(self, event: sfu_events.TrackPublishedEvent):
         """Handle track published events from SFU - spawn TrackAddedEvent with correct type."""
+        if not event.payload:
+            return
         user_id = event.payload.user_id
         if user_id == self.agent_user_id:
             return
@@ -146,6 +148,8 @@ class StreamEdge(EdgeTransport):
     
     async def _on_track_removed(self, event: sfu_events.ParticipantLeftEvent | sfu_events.TrackUnpublishedEvent):
         """Handle track unpublished and participant left events."""
+        if not event.payload:
+            return
         participant = event.participant
         if not participant:
             user_id = event.payload.user_id

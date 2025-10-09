@@ -84,7 +84,7 @@ class StreamEdge(EdgeTransport):
         if not event.payload:
             return
 
-        if event.participant.user_id:
+        if event.participant and event.participant.user_id:
             session_id = event.participant.session_id
             user_id = event.participant.user_id
         else:
@@ -170,7 +170,7 @@ class StreamEdge(EdgeTransport):
             event_desc = "Track unpublished"
         else:
             # ParticipantLeftEvent - all published tracks
-            tracks_to_remove = event.participant.published_tracks or []
+            tracks_to_remove = (event.participant.published_tracks if event.participant else None) or []
             event_desc = "Participant left"
         
         track_names = [TrackType.Name(t) for t in tracks_to_remove]

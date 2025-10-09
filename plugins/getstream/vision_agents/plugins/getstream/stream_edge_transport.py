@@ -4,7 +4,6 @@ import os
 import webbrowser
 from typing import Optional, TYPE_CHECKING
 from urllib.parse import urlencode
-from uuid import uuid4
 
 import aiortc
 from getstream import AsyncStream
@@ -144,7 +143,7 @@ class StreamEdge(EdgeTransport):
             ))
         else:
             raise TimeoutError(
-                f"Timeout waiting for pending track: {track_type_name} ({expected_kind}) from user {user_id}, "
+                f"Timeout waiting for pending track: {track_type_int} ({expected_kind}) from user {user_id}, "
                 f"session {session_id}. Waited {timeout}s but WebRTC track_added with matching kind was never received."
                 f"Pending tracks: {self._pending_tracks}\n"
                 f"Key: {track_key}\n"
@@ -297,7 +296,7 @@ class StreamEdge(EdgeTransport):
         client = call.client.stream
 
         # Create a human user for testing
-        human_id = f"user-demo-agent"
+        human_id = "user-demo-agent"
         name = "Human User"
 
         # Create the user in the GetStream system

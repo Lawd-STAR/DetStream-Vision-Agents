@@ -11,9 +11,10 @@ from getstream.video.rtc import Call
 from opentelemetry import trace
 from opentelemetry.trace import Tracer
 
+from getstream.video.rtc.pb.stream.video.sfu.models.models_pb2 import TrackType
 from ..edge import sfu_events
 from ..edge.events import AudioReceivedEvent, TrackAddedEvent, CallEndedEvent
-from ..edge.types import Connection, Participant, PcmData, TrackType, User
+from ..edge.types import Connection, Participant, PcmData, User
 from ..events.manager import EventManager
 from ..llm.events import (
     LLMResponseChunkEvent,
@@ -581,7 +582,7 @@ class Agent:
                 self.logger.debug(f"🎵 Processing audio from {participant}")
                 await self.stt.process_audio(pcm_data, participant)
 
-    async def _process_track(self, track_id: str, track_type: str, participant):
+    async def _process_track(self, track_id: str, track_type: int, participant):
         # TODO: handle CancelledError
         # we only process video tracks
         if track_type != TrackType.TRACK_TYPE_VIDEO:

@@ -4,7 +4,6 @@ import os
 import webbrowser
 from typing import Optional, TYPE_CHECKING
 from urllib.parse import urlencode
-from uuid import uuid4
 
 import aiortc
 from getstream import AsyncStream
@@ -57,13 +56,14 @@ class StreamEdge(EdgeTransport):
         self.channel: Optional[Channel] = None
         self.conversation: Optional[StreamConversation] = None
         self.channel_type = "videocall"
+        self.agent_user_id: str | None = None
         # Track mapping: (user_id, session_id, track_type_int) -> {"track_id": str, "published": bool}
         # track_type_int is from TrackType enum (e.g., TrackType.TRACK_TYPE_AUDIO)
         self._track_map: dict = {}
         # Temporary storage for tracks before SFU confirms their type
         # track_id -> (user_id, session_id, webrtc_type_string)
         self._pending_tracks: dict = {}
-        
+
         # Register event handlers
         self.events.subscribe(self._on_track_published)
         self.events.subscribe(self._on_track_removed)
@@ -81,30 +81,36 @@ class StreamEdge(EdgeTransport):
 
     async def _on_track_published(self, event: sfu_events.TrackPublishedEvent):
         """Handle track published events from SFU - spawn TrackAddedEvent with correct type."""
-        if not event.participant or not event.payload:
+        if not event.payload:
             return
-        
-        user_id = event.user_id
-        session_id = event.payload.session_id
+
+        if event.participant.user_id:
+            session_id = event.participant.session_id
+            user_id = event.participant.user_id
+        else:
+            user_id = event.payload.user_id
+            session_id = event.payload.session_id
+
+        if user_id == self.agent_user_id:
+            return
+
         track_type_int = event.payload.type  # TrackType enum int from SFU
-        track_type_name = TrackType.Name(track_type_int)        
-        # Get expected WebRTC kind for this track type
         expected_kind = self._get_webrtc_kind(track_type_int)
         track_key = (user_id, session_id, track_type_int)
 
         # First check if track already exists in map (e.g., from previous unpublish/republish)
         if track_key in self._track_map:
             self._track_map[track_key]["published"] = True
-            self.logger.debug(f"Track marked as published (already existed): {track_key}")
+            self.logger.info(f"Track marked as published (already existed): {track_key}")
             return
 
         # Wait for pending track to be populated (with 10 second timeout)
         # SFU might send TrackPublishedEvent before WebRTC processes track_added
         track_id = None
         timeout = 10.0
-        poll_interval = 0.01  # 10ms
+        poll_interval = 0.01
         elapsed = 0.0
-        
+
         while elapsed < timeout:
             # Find pending track for this user/session with matching kind
             for tid, (pending_user, pending_session, pending_kind) in list(self._pending_tracks.items()):
@@ -125,19 +131,19 @@ class StreamEdge(EdgeTransport):
         if track_id:
             # Store with correct type from SFU
             self._track_map[track_key] = {"track_id": track_id, "published": True}
-            self.logger.info(f"Trackmap published: {track_type_name} from {user_id}, track_id: {track_id} (waited {elapsed:.2f}s)")
+            self.logger.info(f"Trackmap published: {track_type_int} from {user_id}, track_id: {track_id} (waited {elapsed:.2f}s)")
             
             # NOW spawn TrackAddedEvent with correct type
             self.events.send(events.TrackAddedEvent(
                 plugin_name="getstream",
                 track_id=track_id,
-                track_type=track_type_name,
+                track_type=track_type_int,
                 user=event.participant,
                 user_metadata=event.participant
             ))
         else:
             raise TimeoutError(
-                f"Timeout waiting for pending track: {track_type_name} ({expected_kind}) from user {user_id}, "
+                f"Timeout waiting for pending track: {track_type_int} ({expected_kind}) from user {user_id}, "
                 f"session {session_id}. Waited {timeout}s but WebRTC track_added with matching kind was never received."
                 f"Pending tracks: {self._pending_tracks}\n"
                 f"Key: {track_key}\n"
@@ -146,14 +152,17 @@ class StreamEdge(EdgeTransport):
     
     async def _on_track_removed(self, event: sfu_events.ParticipantLeftEvent | sfu_events.TrackUnpublishedEvent):
         """Handle track unpublished and participant left events."""
-        if not event.participant:
+        if not event.payload: # NOTE: mypy typecheck
             return
-        
-        # Extract fields based on event type
+
         participant = event.participant
-        user_id = participant.user_id
-        session_id = participant.session_id
-        
+        if participant and participant.user_id:
+            user_id = participant.user_id
+            session_id = participant.session_id
+        else:
+            user_id = event.payload.user_id
+            session_id = event.payload.session_id
+
         # Determine which tracks to remove
         if hasattr(event.payload, 'type') and event.payload is not None:
             # TrackUnpublishedEvent - single track
@@ -161,7 +170,7 @@ class StreamEdge(EdgeTransport):
             event_desc = "Track unpublished"
         else:
             # ParticipantLeftEvent - all published tracks
-            tracks_to_remove = participant.published_tracks or []
+            tracks_to_remove = event.participant.published_tracks or []
             event_desc = "Participant left"
         
         track_names = [TrackType.Name(t) for t in tracks_to_remove]
@@ -169,16 +178,15 @@ class StreamEdge(EdgeTransport):
         
         # Mark each track as unpublished and send TrackRemovedEvent
         for track_type_int in tracks_to_remove:
-            track_type_name = TrackType.Name(track_type_int)
             track_key = (user_id, session_id, track_type_int)
             track_info = self._track_map.get(track_key)
-            
+
             if track_info:
                 track_id = track_info["track_id"]
                 self.events.send(events.TrackRemovedEvent(
                     plugin_name="getstream",
                     track_id=track_id,
-                    track_type=track_type_name,
+                    track_type=track_type_int,
                     user=participant,
                     user_metadata=participant
                 ))
@@ -200,6 +208,7 @@ class StreamEdge(EdgeTransport):
         return self.conversation
 
     async def create_user(self, user: User):
+        self.agent_user_id = user.id
         return await self.client.create_user(name=user.name, id=user.id)
 
     async def join(self, agent: "Agent", call: Call) -> StreamConnection:
@@ -222,18 +231,19 @@ class StreamEdge(EdgeTransport):
             default=self._get_subscription_config()
         )
 
-        try:
-            # Open RTC connection and keep it alive for the duration of the returned context manager
-            connection = await rtc.join(
-                call, agent.agent_user.id, subscription_config=subscription_config
-            )
-            await connection.__aenter__() # TODO: weird API? there should be a manual version
-        except Exception:
-            raise
+        # Open RTC connection and keep it alive for the duration of the returned context manager
+        connection = await rtc.join(
+            call, agent.agent_user.id, subscription_config=subscription_config
+        )
 
-        self._connection = connection
+        @connection.on("track_added")
+        async def on_track(track_id, track_type, user):
+            # Store track in pending map - wait for SFU to confirm type before spawning TrackAddedEvent
+            self._pending_tracks[track_id] = (user.user_id, user.session_id, track_type)
+            self.logger.info(f"Track received from WebRTC (pending SFU confirmation): {track_id}, type: {track_type}, user: {user.user_id}")
 
-        @self._connection.on("audio")
+        self.events.silent(events.AudioReceivedEvent)
+        @connection.on("audio")
         async def on_audio_received(pcm: PcmData, participant: Participant):
             self.events.send(events.AudioReceivedEvent(
                 plugin_name="getstream",
@@ -242,17 +252,10 @@ class StreamEdge(EdgeTransport):
                 user_metadata=participant
             ))
 
-        self.events.silent(events.AudioReceivedEvent)
-
-        @self._connection.on("track_added")
-        async def on_track(track_id, track_type, user):
-            # Store track in pending map - wait for SFU to confirm type before spawning TrackAddedEvent
-            self._pending_tracks[track_id] = (user.user_id, user.session_id, track_type)
-            self.logger.info(f"Track received from WebRTC (pending SFU confirmation): {track_id}, type: {track_type}, user: {user.user_id}")
-
+        await connection.__aenter__() # TODO: weird API? there should be a manual version
+        self._connection = connection
 
         standardize_connection = StreamConnection(connection)
-
         return standardize_connection
 
     def create_audio_track(self, framerate: int = 48000, stereo: bool = True):
@@ -293,9 +296,11 @@ class StreamEdge(EdgeTransport):
         client = call.client.stream
 
         # Create a human user for testing
-        human_id = f"user-{uuid4()}"
+        human_id = "user-demo-agent"
         name = "Human User"
 
+        # Create the user in the GetStream system
+        await client.create_user(name=name, id=human_id)
         # Create user token for browser access
         token = client.create_token(human_id, expiration=3600)
 

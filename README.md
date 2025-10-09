@@ -24,10 +24,6 @@ Created by Stream, uses [Stream's edge network](https://getstream.io/video/) for
 
 ### Sports Coaching
 
-<a href="https://x.com/nash0x7e2/status/1950341779745599769">
-  <img src="assets/golf_example_tweet.png" alt="Golf Example" style="max-width: 500px; width: 40%">
-</a>
-
 This example shows you how to build golf coaching AI with YOLO and OpenAI realtime.
 Combining a fast object detection model (like YOLO) with a full realtime AI is useful for many different video AI use cases.
 For example: Drone fire detection, sports/video game coaching, physical therapy, workout coaching, just dance style games etc.
@@ -48,7 +44,9 @@ This example shows you how to build golf coaching AI with YOLO and OpenAI realti
 Combining a fast object detection model (like YOLO) with a full realtime AI is useful for many different video AI use cases.
 For example: Drone fire detection. Sports/video game coaching. Physical therapy. Workout coaching, Just dance style games etc.
 
-[![Golf Example](assets/golf_example_tweet.png)](https://x.com/nash0x7e2/status/1950341779745599769)
+<a href="https://x.com/nash0x7e2/status/1950341779745599769">
+  <img src="assets/golf_example_tweet.png" alt="Golf Example" style="max-width: 500px; width: 40%">
+</a>
 
 ### Cluely style Invisible Assistant (coming soon)
 

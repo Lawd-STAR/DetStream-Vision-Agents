@@ -180,10 +180,8 @@ class EventManager:
             ValueError: If event_class doesn't meet requirements and ignore_not_compatible is False
         """
         if event_class.__name__.endswith('Event') and hasattr(event_class, 'type'):
-            #if event_class.type in self._events:
-            #    raise KeyError(f"{event_class.type} is already registered.")
             self._events[event_class.type] = event_class
-            logger.info(f"Registered new event {event_class} - {event_class.type}")
+            logger.debug(f"Registered new event {event_class} - {event_class.type}")
         elif event_class.__name__.endswith('BaseEvent'):
             return
         elif not ignore_not_compatible:

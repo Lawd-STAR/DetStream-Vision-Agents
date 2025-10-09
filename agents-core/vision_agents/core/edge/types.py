@@ -25,20 +25,6 @@ class Participant:
     user_id: str
 
 
-class TrackType(StrEnum):
-    TRACK_TYPE_UNSPECIFIED     = "unspecified"
-    TRACK_TYPE_AUDIO           = "audio"
-    TRACK_TYPE_VIDEO           = "video"
-    TRACK_TYPE_SCREEN_SHARE    = "screen_share" # TODO: Verify its correct
-    TRACK_TYPE_SCREEN_SHARE_AUDIO = "screen_share_audio"
-
-TRACK_TYPE_UNSPECIFIED      = TrackType.TRACK_TYPE_UNSPECIFIED
-TRACK_TYPE_AUDIO            = TrackType.TRACK_TYPE_AUDIO
-TRACK_TYPE_VIDEO            = TrackType.TRACK_TYPE_VIDEO
-TRACK_TYPE_SCREEN_SHARE     = TrackType.TRACK_TYPE_SCREEN_SHARE
-TRACK_TYPE_SCREEN_SHARE_AUDIO = TrackType.TRACK_TYPE_SCREEN_SHARE_AUDIO
-
-
 class Connection(AsyncIOEventEmitter):
     """
     To standardize we need to have a method to close

@@ -18,7 +18,7 @@ class TrackAddedEvent(PluginBaseEvent):
     """Event emitted when a track is added to the call."""
     type: str = field(default='plugin.edge.track_added', init=False)
     track_id: Optional[str] = None
-    track_type: Optional[str] = None
+    track_type: Optional[int] = None
     user: Optional[Any] = None
 
 
@@ -27,7 +27,7 @@ class TrackRemovedEvent(PluginBaseEvent):
     """Event emitted when a track is removed from the call."""
     type: str = field(default='plugin.edge.track_removed', init=False)
     track_id: Optional[str] = None
-    track_type: Optional[str] = None
+    track_type: Optional[int] = None
     user: Optional[Any] = None
 
 

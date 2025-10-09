@@ -84,13 +84,18 @@ class StreamEdge(EdgeTransport):
         """Handle track published events from SFU - spawn TrackAddedEvent with correct type."""
         if not event.payload:
             return
-        user_id = event.payload.user_id
+
+        if event.participant.user_id:
+            session_id = event.participant.session_id
+            user_id = event.participant.user_id
+        else:
+            user_id = event.payload.user_id
+            session_id = event.payload.session_id
+
         if user_id == self.agent_user_id:
             return
-        session_id = event.payload.session_id
+
         track_type_int = event.payload.type  # TrackType enum int from SFU
-        track_type_name = TrackType.Name(track_type_int)
-        # Get expected WebRTC kind for this track type
         expected_kind = self._get_webrtc_kind(track_type_int)
         track_key = (user_id, session_id, track_type_int)
 
@@ -127,13 +132,13 @@ class StreamEdge(EdgeTransport):
         if track_id:
             # Store with correct type from SFU
             self._track_map[track_key] = {"track_id": track_id, "published": True}
-            self.logger.info(f"Trackmap published: {track_type_name} from {user_id}, track_id: {track_id} (waited {elapsed:.2f}s)")
+            self.logger.info(f"Trackmap published: {track_type_int} from {user_id}, track_id: {track_id} (waited {elapsed:.2f}s)")
             
             # NOW spawn TrackAddedEvent with correct type
             self.events.send(events.TrackAddedEvent(
                 plugin_name="getstream",
                 track_id=track_id,
-                track_type=track_type_name,
+                track_type=track_type_int,
                 user=event.participant,
                 user_metadata=event.participant
             ))
@@ -148,15 +153,16 @@ class StreamEdge(EdgeTransport):
     
     async def _on_track_removed(self, event: sfu_events.ParticipantLeftEvent | sfu_events.TrackUnpublishedEvent):
         """Handle track unpublished and participant left events."""
-        if not event.payload:
+        if not event.payload: # NOTE: mypy typecheck
             return
+
         participant = event.participant
-        if not participant:
-            user_id = event.payload.user_id
-            session_id = event.payload.session_id
-        else:
+        if event.participant.user_id:
             user_id = event.participant.user_id
             session_id = event.participant.session_id
+        else:
+            user_id = event.payload.user_id
+            session_id = event.payload.session_id
 
         # Determine which tracks to remove
         if hasattr(event.payload, 'type') and event.payload is not None:
@@ -165,7 +171,7 @@ class StreamEdge(EdgeTransport):
             event_desc = "Track unpublished"
         else:
             # ParticipantLeftEvent - all published tracks
-            tracks_to_remove = participant.published_tracks or []
+            tracks_to_remove = event.participant.published_tracks or []
             event_desc = "Participant left"
         
         track_names = [TrackType.Name(t) for t in tracks_to_remove]
@@ -173,16 +179,15 @@ class StreamEdge(EdgeTransport):
         
         # Mark each track as unpublished and send TrackRemovedEvent
         for track_type_int in tracks_to_remove:
-            track_type_name = TrackType.Name(track_type_int)
             track_key = (user_id, session_id, track_type_int)
             track_info = self._track_map.get(track_key)
-            
+
             if track_info:
                 track_id = track_info["track_id"]
                 self.events.send(events.TrackRemovedEvent(
                     plugin_name="getstream",
                     track_id=track_id,
-                    track_type=track_type_name,
+                    track_type=track_type_int,
                     user=participant,
                     user_metadata=participant
                 ))
@@ -292,7 +297,7 @@ class StreamEdge(EdgeTransport):
         client = call.client.stream
 
         # Create a human user for testing
-        human_id = f"user-{uuid4()}"
+        human_id = f"user-demo-agent"
         name = "Human User"
 
         # Create the user in the GetStream system

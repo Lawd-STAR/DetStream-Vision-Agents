@@ -582,7 +582,7 @@ class Agent:
                 self.logger.debug(f"🎵 Processing audio from {participant}")
                 await self.stt.process_audio(pcm_data, participant)
 
-    async def _process_track(self, track_id: str, track_type: str, participant):
+    async def _process_track(self, track_id: str, track_type: int, participant):
         # TODO: handle CancelledError
         # we only process video tracks
         if track_type != TrackType.TRACK_TYPE_VIDEO:

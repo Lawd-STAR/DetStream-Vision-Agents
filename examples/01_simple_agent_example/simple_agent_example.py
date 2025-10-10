@@ -48,7 +48,7 @@ async def start_agent() -> None:
             # ],)
 
         # run till the call ends
-        await agent.finish()
+        await asyncio.Event().wait()
 
 
 if __name__ == "__main__":

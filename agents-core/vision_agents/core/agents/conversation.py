@@ -2,7 +2,7 @@ import datetime
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict, TypeVar, Generic
 
 from dataclasses import dataclass
 
@@ -11,16 +11,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Message:
-    """A single utterance or assistant message within a conversation.
-
-    Attributes:
-        content: Text content of the message.
-        original: Optional provider-native object for this message.
-        timestamp: Time the message was created (auto-filled on init).
-        role: Role of the sender (e.g., "user", "assistant").
-        user_id: Logical user identifier associated with the message.
-        id: Unique message identifier (auto-generated if not provided).
-    """
     content: str
     original: Optional[Any] = None  # the original openai, claude or gemini message
     timestamp: Optional[datetime.datetime] = None
@@ -57,23 +47,124 @@ class StreamHandle:
     user_id: str
 
 
-class Conversation(ABC):
+class StreamingMessageHandler(ABC):
+    """Base class for handling streaming messages with out-of-order content support."""
+    
+    def __init__(self, message_id: str, user_id: str, role: str):
+        self.message_id = message_id
+        self.user_id = user_id
+        self.role = role
+        self.content = ""  # Start with empty content
+        self.is_finalized = False
+        self.pending_fragments: Dict[int, str] = {}
+        self.last_content_index = -1
+        self._content_created = False
+    
+    
+    async def append_content(self, text: str, content_index: Optional[int] = None, finalize: bool = False):
+        """Append content to the message, handling out-of-order delivery.
+        
+        Args:
+            text: The text content to append
+            content_index: Optional index for ordering (starts at 0). If None, uses next sequential index.
+            finalize: If True, marks the message as completed
+        """
+        if self.is_finalized:
+            raise RuntimeError(f"Cannot append to finalized message {self.message_id}")
+        
+        if content_index is None:
+            content_index = self.last_content_index + 1
+        
+        # Store the fragment
+        self.pending_fragments[content_index] = text
+        
+        # Try to apply pending fragments in order
+        await self._apply_pending_fragments()
+        
+        if finalize:
+            await self.finalize()
+    
+    async def set_content(self, text: str, finalize: bool = False):
+        """Set the entire content of the message, replacing any existing content.
+        
+        Args:
+            text: The complete text content
+            finalize: If True, marks the message as completed
+        """
+        if self.is_finalized:
+            raise RuntimeError(f"Cannot set content on finalized message {self.message_id}")
+        
+        self.content = text
+        self.pending_fragments.clear()
+        self.last_content_index = -1
+        
+        # Notify implementation about content change
+        if not self._content_created:
+            await self._on_content_created()
+            self._content_created = True
+        else:
+            await self._on_content_changed()
+        
+        if finalize:
+            await self.finalize()
+    
+    async def finalize(self):
+        """Mark the message as finalized and clean up."""
+        if self.is_finalized:
+            return
+        
+        self.is_finalized = True
+        await self._on_finalized()
+    
+    async def _apply_pending_fragments(self):
+        """Apply pending fragments in sequential order."""
+        while True:
+            next_index = self.last_content_index + 1
+            if next_index in self.pending_fragments:
+                fragment = self.pending_fragments.pop(next_index)
+                self.content += fragment
+                self.last_content_index = next_index
+                
+                # Call _on_content_created for the first content update
+                if not self._content_created:
+                    await self._on_content_created()
+                    self._content_created = True
+                else:
+                    await self._on_content_changed()
+            else:
+                break
+    
+    @abstractmethod
+    async def _on_content_created(self):
+        """Called when the message content is first created. Implementation-specific logic goes here."""
+        pass
+    
+    @abstractmethod
+    async def _on_content_changed(self):
+        """Called when the message content changes. Implementation-specific logic goes here."""
+        pass
+    
+    @abstractmethod
+    async def _on_finalized(self):
+        """Called when the message is finalized. Implementation-specific cleanup goes here."""
+        pass
+
+
+# Type variable for the handler implementation
+HandlerType = TypeVar('HandlerType', bound=StreamingMessageHandler)
+
+class Conversation(ABC, Generic[HandlerType]):
     def __init__(
         self,
         instructions: str,
         messages: List[Message],
     ):
-        """Create a conversation container.
-
-        Args:
-            instructions: System instructions that guide the assistant.
-            messages: Initial message history.
-        """
         self.instructions = instructions
         self.messages = [m for m in messages]
+        self._streaming_handlers: Dict[str, HandlerType] = {}
 
     @abstractmethod
-    def add_message(self, message: Message, completed: bool = True):
+    async def add_message(self, message: Message, completed: bool = True):
         """Add a message to the conversation.
         
         Args:
@@ -87,7 +178,7 @@ class Conversation(ABC):
         ...
     
     @abstractmethod
-    def update_message(self, message_id: str, input_text: str, user_id: str, replace_content: bool, completed: bool):
+    async def update_message(self, message_id: str, input_text: str, user_id: str, replace_content: bool, completed: bool):
         """Update an existing message or create a new one if not found.
         
         Args:
@@ -102,8 +193,58 @@ class Conversation(ABC):
         """
         ...
     
+    @abstractmethod
+    def _create_handler(self, message_id: str, user_id: str, role: str) -> HandlerType:
+        """Create a new handler instance. Implementation-specific."""
+        pass
+    
+    async def get_streaming_message_handler(self, message_id: str) -> Optional[HandlerType]:
+        """Get an existing streaming message handler by ID.
+        
+        Args:
+            message_id: The ID of the message handler to retrieve
+            
+        Returns:
+            The handler if it exists, None otherwise
+        """
+        return self._streaming_handlers.get(message_id)
+    
+    async def upsert_streaming_message_handler(self, message_id: str, user_id: str, role: str, 
+                                            content: str = "", content_index: Optional[int] = None) -> HandlerType:
+        """Get or create a streaming message handler, ensuring only one exists per message_id.
+        
+        Args:
+            message_id: The ID of the message handler
+            user_id: The ID of the user
+            role: The role of the message sender
+            content: The content fragment to add (optional, defaults to empty string)
+            content_index: The index of this content fragment (optional, auto-increments if not provided)
+            
+        Returns:
+            The handler instance
+        """
+
+        print(f"upsert_streaming_message_handler {message_id} {content} {content_index}")
+
+        handler = self._streaming_handlers.get(message_id)
+        
+        if handler is None:
+            # Create new handler
+            handler = self._create_handler(message_id, user_id, role)
+            self._streaming_handlers[message_id] = handler
+        
+        # Add content if provided
+        if content:
+            await handler.append_content(content, content_index)
+        
+        return handler
+    
+    def _remove_handler(self, message_id: str):
+        """Remove a handler from the active handlers dict."""
+        self._streaming_handlers.pop(message_id, None)
+    
     # Streaming message convenience methods
-    def start_streaming_message(self, role: str = "assistant", user_id: Optional[str] = None, 
+    async def start_streaming_message(self, role: str = "assistant", user_id: Optional[str] = None,
                                initial_content: str = "") -> StreamHandle:
         """Start a new streaming message and return a handle for subsequent operations.
         
@@ -146,23 +287,20 @@ class Conversation(ABC):
             user_id=user_id or role,
             id=None  # Will be assigned during add
         )
-        self.add_message(message, completed=False)
+        await self.add_message(message, completed=False)
         # The message now has an ID assigned by the add_message flow
         # Find it in the messages list (it's the last one added)
         added_message = self.messages[-1]
-        # Message IDs and user_ids are always set by add_message
-        assert added_message.id is not None, "Message ID should be set by add_message"
-        assert added_message.user_id is not None, "User ID should be set by add_message"
         return StreamHandle(message_id=added_message.id, user_id=added_message.user_id)
     
-    def append_to_message(self, handle: StreamHandle, text: str):
+    async def append_to_message(self, handle: StreamHandle, text: str):
         """Append text to a streaming message identified by the handle.
         
         Args:
             handle: The StreamHandle returned by start_streaming_message
             text: Text to append to the message
         """
-        self.update_message(
+        await self.update_message(
             message_id=handle.message_id,
             input_text=text,
             user_id=handle.user_id,
@@ -170,14 +308,14 @@ class Conversation(ABC):
             completed=False
         )
     
-    def replace_message(self, handle: StreamHandle, text: str):
+    async def replace_message(self, handle: StreamHandle, text: str):
         """Replace the content of a streaming message identified by the handle.
         
         Args:
             handle: The StreamHandle returned by start_streaming_message
             text: Text to replace the message content with
         """
-        self.update_message(
+        await self.update_message(
             message_id=handle.message_id,
             input_text=text,
             user_id=handle.user_id,
@@ -185,7 +323,7 @@ class Conversation(ABC):
             completed=False
         )
     
-    def complete_message(self, handle: StreamHandle):
+    async def complete_message(self, handle: StreamHandle):
         """Mark a streaming message as completed.
         
         Args:
@@ -196,7 +334,7 @@ class Conversation(ABC):
         message = next((msg for msg in self.messages if msg.id == handle.message_id), None)
         if message:
             # Use replace mode with the current content to avoid space issues
-            self.update_message(
+            await self.update_message(
                 message_id=handle.message_id,
                 input_text=message.content,
                 user_id=handle.user_id,
@@ -205,59 +343,76 @@ class Conversation(ABC):
             )
 
 
-class InMemoryConversation(Conversation):
+class InMemoryStreamingMessageHandler(StreamingMessageHandler):
+    """In-memory implementation of StreamingMessageHandler."""
+    
+    def __init__(self, message_id: str, user_id: str, role: str, conversation: 'InMemoryConversation' = None):
+        super().__init__(message_id, user_id, role)
+        self.conversation = conversation
+    
+    async def _on_content_created(self):
+        """Called when content is first created. For in-memory, same as content changed."""
+        await self._on_content_changed()
+    
+    async def _on_content_changed(self):
+        """Update the message in the conversation's messages list."""
+        if self.conversation:
+            # Find and update the message
+            for message in self.conversation.messages:
+                if message.id == self.message_id:
+                    message.content = self.content
+                    break
+    
+    async def _on_finalized(self):
+        """Remove the handler from the conversation when finalized."""
+        if self.conversation:
+            self.conversation._remove_handler(self.message_id)
+
+
+class InMemoryConversation(Conversation[InMemoryStreamingMessageHandler]):
     messages: List[Message]
 
     def __init__(self, instructions: str, messages: List[Message]):
-        """Create an in-memory conversation holder.
-
-        Stores messages in a local list and performs updates in place. Useful for
-        tests and local development, or as a base for provider-backed
-        conversations.
-        """
         super().__init__(instructions, messages)
 
     def lookup(self, id: str) -> Optional[Message]:
-        """Find a message by ID. Needed by StreamConversation
-
-        Args:
-            id: Message identifier to lookup.
-
-        Returns:
-            The `Message` if found, otherwise None.
-        """
+        """Internal method to find message by ID - needed by StreamConversation"""
         msgs = [m for m in self.messages if m.id == id]
         if msgs:
             return msgs[0]
         return None
+    
+    def _create_handler(self, message_id: str, user_id: str, role: str) -> InMemoryStreamingMessageHandler:
+        """Create a new in-memory streaming message handler."""
+        # Create the message first (empty content initially, will be updated by handler)
+        message = Message(
+            content="",
+            role=role,
+            user_id=user_id,
+            id=message_id
+        )
+        self.messages.append(message)
+        
+        # Create and return the handler
+        return InMemoryStreamingMessageHandler(
+            message_id=message_id,
+            user_id=user_id,
+            role=role,
+            conversation=self
+        )
 
-    def add_message(self, message: Message, completed: bool = True):
-        """Append a message to the in-memory list and return None.
-
-        The `completed` flag is not used for in-memory conversations.
-        """
+    async def add_message(self, message: Message, completed: bool = True):
         self.messages.append(message)
         # In-memory conversation doesn't need to handle completed flag
         return None
 
-    def update_message(self, message_id: str, input_text: str, user_id: str, replace_content: bool, completed: bool):
-        """Update or create a message in-memory.
-
-        If the message is not found, a new one is created with the given id.
-
-        Args:
-            message_id: Target message identifier.
-            input_text: Text to set (replace) or append.
-            user_id: Owner user id for the message.
-            replace_content: If True, replace content; otherwise append.
-            completed: Ignored for in-memory conversations.
-        """
+    async def update_message(self, message_id: str, input_text: str, user_id: str, replace_content: bool, completed: bool):
         # Find the message by id
         message = self.lookup(message_id)
         
         if message is None:
             logger.info(f"message {message_id} not found, create one instead")
-            return self.add_message(Message(user_id=user_id, id=message_id, content=input_text, original=None), completed=completed)
+            return await self.add_message(Message(user_id=user_id, id=message_id, content=input_text, original=None), completed=completed)
 
         if replace_content:
             message.content = input_text

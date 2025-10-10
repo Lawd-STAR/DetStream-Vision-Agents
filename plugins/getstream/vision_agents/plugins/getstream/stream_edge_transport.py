@@ -53,7 +53,6 @@ class StreamEdge(EdgeTransport):
         self.events = EventManager()
         self.events.register_events_from_module(events)
         self.events.register_events_from_module(sfu_events)
-        self.channel: Optional[Channel] = None
         self.conversation: Optional[StreamConversation] = None
         self.channel_type = "videocall"
         self.agent_user_id: str | None = None
@@ -197,13 +196,12 @@ class StreamEdge(EdgeTransport):
 
     async def create_conversation(self, call: Call, user, instructions):
         chat_client: ChatClient = call.client.stream.chat
-        self.channel = await chat_client.get_or_create_channel(
-            self.channel_type,
-            call.id,
+        channel = chat_client.channel(self.channel_type, call.id)
+        await channel.get_or_create(
             data=ChannelInput(created_by_id=user.id),
         )
         self.conversation = StreamConversation(
-            instructions, [], self.channel.data.channel, chat_client
+            instructions, [], channel
         )
         return self.conversation
 

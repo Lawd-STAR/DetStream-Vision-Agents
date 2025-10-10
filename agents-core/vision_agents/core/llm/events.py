@@ -122,6 +122,8 @@ class LLMResponseCompletedEvent(PluginBaseEvent):
     original: Any = None
     text: str = ""
 
+    item_id: Optional[str] = None
+    """The ID of the output item that the text delta was added to."""
 
 @dataclass
 class ToolStartEvent(PluginBaseEvent):

@@ -38,6 +38,10 @@ class BaseEvent(DataClassJsonMixin):
     session_id: Optional[str] = None
     user_metadata: Optional[Participant] = None
 
+    def user_id(self, fallback="") -> str:
+        if self.user_metadata is None:
+            return fallback
+        return getattr(self.user_metadata, "user_id", fallback)
 
 @dataclass
 class PluginBaseEvent(BaseEvent):

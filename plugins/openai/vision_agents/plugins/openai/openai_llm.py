@@ -122,7 +122,7 @@ class OpenAILLM(LLM):
             # Use the first positional argument as input, or create a default
             input_content = args[0] if args else "Hello"
             kwargs["input"] = input_content
-        
+
         # OpenAI Responses API only accepts keyword arguments
         response = await self.client.responses.create(**kwargs)
 
@@ -131,25 +131,25 @@ class OpenAILLM(LLM):
         if isinstance(response, OpenAIResponse):
             # Non-streaming response
             llm_response = LLMResponseEvent[OpenAIResponse](response, response.output_text)
-            
+
             # Check for tool calls in non-streaming response
             tool_calls = self._extract_tool_calls_from_response(response)
             if tool_calls:
                 # Execute tools and get follow-up response
                 llm_response = await self._handle_tool_calls(tool_calls, kwargs)
-                
+
         elif hasattr(response, "__aiter__"):  # async stream
             # Streaming response
             stream_response = response
             pending_tool_calls = []
             seen = set()
-            
+
             # Process streaming events and collect tool calls
             async for event in stream_response:
                 llm_response_optional = self._standardize_and_emit_event(event)
                 if llm_response_optional is not None:
                     llm_response = llm_response_optional
-                
+
                 # Grab tool calls when the model finalizes the turn
                 if getattr(event, "type", "") == "response.completed":
                     calls = self._extract_tool_calls_from_response(event.response)
@@ -158,7 +158,7 @@ class OpenAILLM(LLM):
                         if key not in seen:
                             pending_tool_calls.append(c)
                             seen.add(key)
-            
+
             # If we have tool calls, execute them and get follow-up response
             if pending_tool_calls:
                 llm_response = await self._handle_tool_calls(pending_tool_calls, kwargs)
@@ -172,6 +172,7 @@ class OpenAILLM(LLM):
         if llm_response is not None and isinstance(response, OpenAIResponse):
             # Non-streaming response - emit completion event
             self.events.send(LLMResponseCompletedEvent(
+                item_id=llm_response.original.output[0].id,
                 original=llm_response.original,
                 text=llm_response.text
             ))
@@ -195,15 +196,15 @@ class OpenAILLM(LLM):
         current_tool_calls = tool_calls
         current_kwargs = original_kwargs.copy()
         seen: set[tuple] = set()
-        
+
         for round_num in range(max_rounds):
             # Execute tools (with cross-round deduplication)
             triples, seen = await self._dedup_and_execute(current_tool_calls, max_concurrency=8, timeout_s=30, seen=seen)  # type: ignore[arg-type]
-            
+
             # If no tools were executed, break the loop
             if not triples:
                 break
-            
+
             # Process all tool calls, including failed ones
             tool_messages = []
             for tc, res, err in triples:
@@ -211,10 +212,10 @@ class OpenAILLM(LLM):
                 if not cid:
                     # Skip tool calls without ID - they can't be reported back
                     continue
-                
+
                 # Use error result if there was an error, otherwise use the result
                 output = err if err is not None else res
-                
+
                 # Convert to string for OpenAI Responses API with sanitization
                 output_str = self._sanitize_tool_output(output)
                 tool_messages.append({
@@ -222,34 +223,34 @@ class OpenAILLM(LLM):
                     "call_id": cid,
                     "output": output_str,
                 })
-            
+
             # Don't send empty tool result inputs
             if not tool_messages:
                 return llm_response or LLMResponseEvent[OpenAIResponse](None, "")  # type: ignore[arg-type]
-            
+
             # Send follow-up request with tool results
             if not self.openai_conversation:
                 return llm_response or LLMResponseEvent[OpenAIResponse](None, "")  # type: ignore[arg-type]
-            
+
             follow_up_kwargs = {
                 "model": current_kwargs.get("model", self.model),
                 "conversation": self.openai_conversation.id,
                 "input": tool_messages,
                 "stream": True,
             }
-            
+
             # Include tools again for potential follow-up calls
             tools_spec = self._get_tools_for_provider()
             if tools_spec:
                 follow_up_kwargs["tools"] = self._convert_tools_to_provider_format(tools_spec)  # type: ignore[arg-type]
-            
+
             # Get follow-up response
             follow_up_response = await self.client.responses.create(**follow_up_kwargs)
-            
+
             if isinstance(follow_up_response, OpenAIResponse):
                 # Non-streaming response
                 llm_response = LLMResponseEvent[OpenAIResponse](follow_up_response, follow_up_response.output_text)
-                
+
                 # Check for more tool calls
                 next_tool_calls = self._extract_tool_calls_from_response(follow_up_response)
                 if next_tool_calls and round_num < max_rounds - 1:
@@ -258,18 +259,18 @@ class OpenAILLM(LLM):
                     continue
                 else:
                     return llm_response
-                    
+
             elif hasattr(follow_up_response, "__aiter__"):  # async stream
                 stream_response = follow_up_response
                 llm_response = None
                 pending_tool_calls = []
                 # Don't reset seen - keep deduplication across rounds
-                
+
                 async for event in stream_response:
                     llm_response_optional = self._standardize_and_emit_event(event)
                     if llm_response_optional is not None:
                         llm_response = llm_response_optional
-                    
+
                     # Check for more tool calls
                     if getattr(event, "type", "") == "response.completed":
                         calls = self._extract_tool_calls_from_response(event.response)
@@ -278,7 +279,7 @@ class OpenAILLM(LLM):
                             if key not in seen:
                                 pending_tool_calls.append(c)
                                 seen.add(key)
-                
+
                 # If we have more tool calls and haven't exceeded max rounds, continue
                 if pending_tool_calls and round_num < max_rounds - 1:
                     current_tool_calls = pending_tool_calls
@@ -289,7 +290,7 @@ class OpenAILLM(LLM):
             else:
                 # Defensive fallback
                 return LLMResponseEvent[OpenAIResponse](None, "")  # type: ignore[arg-type]
-        
+
         # If we've exhausted all rounds, return the last response
         return llm_response or LLMResponseEvent[OpenAIResponse](None, "")  # type: ignore[arg-type]
 
@@ -393,7 +394,7 @@ class OpenAILLM(LLM):
             if not call_id:
                 # skip or wrap into a normal assistant message / log an error
                 continue
-                
+
             # Send only function_call_output items keyed by call_id
             # Convert to string for Responses API
             output_str = res if isinstance(res, str) else json.dumps(res)
@@ -429,7 +430,9 @@ class OpenAILLM(LLM):
             delta_event: ResponseTextDeltaEvent = event
             self.events.send(LLMResponseChunkEvent(
                 plugin_name="openai",
-                content_index=delta_event.content_index,
+                # sadly content_index is always set to 0
+                # content_index=delta_event.content_index,
+                content_index=None,
                 item_id=delta_event.item_id,
                 output_index=delta_event.output_index,
                 sequence_number=delta_event.sequence_number,
@@ -442,7 +445,8 @@ class OpenAILLM(LLM):
             self.events.send(LLMResponseCompletedEvent(
                 plugin_name="openai",
                 original=llm_response.original,
-                text=llm_response.text
+                text=llm_response.text,
+                item_id=llm_response.original.output[0].id,
             ))
             return llm_response
         return None

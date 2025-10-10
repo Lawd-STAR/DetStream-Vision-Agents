@@ -19,15 +19,13 @@ from ..events.manager import EventManager
 from ..llm.events import (
     LLMResponseChunkEvent,
     LLMResponseCompletedEvent,
-    RealtimePartialTranscriptEvent,
-    RealtimeTranscriptEvent,
 )
 from ..llm.llm import LLM
 from ..llm.realtime import Realtime
 from ..logging_utils import CallContextToken, clear_call_context, set_call_context
 from ..mcp import MCPBaseServer, MCPManager
 from ..processors.base_processor import Processor, ProcessorType, filter_processors
-from ..stt.events import STTPartialTranscriptEvent, STTTranscriptEvent
+from ..stt.events import STTTranscriptEvent
 from ..stt.stt import STT
 from ..tts.tts import TTS
 from ..turn_detection import TurnDetector, TurnStartedEvent, TurnEndedEvent

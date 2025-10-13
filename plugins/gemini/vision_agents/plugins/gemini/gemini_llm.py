@@ -108,7 +108,8 @@ class GeminiLLM(LLM):
         for idx, chunk in enumerate(iterator):
             response_chunk: GenerateContentResponse = chunk
             final_chunk = response_chunk
-            llm_response_optional = self._standardize_and_emit_event(response_chunk, text_parts, item_id, idx)
+            self._standardize_and_emit_event(response_chunk, text_parts, item_id, idx)
+
             # collect function calls as they stream
             try:
                 chunk_calls = self._extract_tool_calls_from_stream_chunk(chunk)

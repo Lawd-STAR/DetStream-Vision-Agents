@@ -231,7 +231,7 @@ class Agent:
         async def _handle_output_text_delta(event: LLMResponseChunkEvent):
             """Handle partial LLM response text deltas."""
 
-            self.logger.info(f"🤖 [LLM delta response]: {event.delta} {event.item_id}")
+            self.logger.info(f"🤖 [LLM delta response]: {event.delta} {event.item_id} {event.content_index}")
 
             if self.conversation is None:
                 return

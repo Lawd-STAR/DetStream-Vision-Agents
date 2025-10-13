@@ -158,6 +158,7 @@ class TestOpenAILLM:
         # Verify chunk events have proper content and item_id
         total_delta_text = ""
         chunk_item_ids = set()
+        content_indices = []
         for chunk_event in chunk_events:
             assert chunk_event.delta is not None, (
                 "Chunk events should have delta content"
@@ -171,6 +172,18 @@ class TestOpenAILLM:
             )
             chunk_item_ids.add(chunk_event.item_id)
             total_delta_text += chunk_event.delta
+            
+            # Validate content_index: should be sequential (0, 1, 2, ...) or None
+            if chunk_event.content_index is not None:
+                content_indices.append(chunk_event.content_index)
+        
+        # Verify content_index sequencing if any are provided
+        if content_indices:
+            # Should be sequential starting from 0
+            expected_indices = list(range(len(content_indices)))
+            assert content_indices == expected_indices, (
+                f"content_index should be sequential (0, 1, 2, ...), but got: {content_indices}"
+            )
 
         # Verify completion event has proper content and item_id
         complete_event = complete_events[0]

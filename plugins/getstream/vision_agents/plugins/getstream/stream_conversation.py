@@ -148,26 +148,16 @@ class StreamConversation(InMemoryConversation):
         self.messages.append(message)
 
         # Send the message to Stream
-        request = MessageRequest(text=message.content, user_id=message.user_id)
+        request = MessageRequest(
+            text=message.content,
+            user_id=message.user_id,
+            custom={"generating": not completed},
+        )
         response = await self.channel.send_message(request)
 
         # Store the mapping between internal ID and Stream message ID
         stream_id = response.data.message.id
         self.internal_ids_to_stream_ids[message.id] = stream_id
-
-        # Update the message with completion status
-        if completed:
-            await self.channel.client.update_message_partial(
-                stream_id,
-                user_id=message.user_id,
-                set={"text": message.content, "generating": False},
-            )
-        else:
-            await self.channel.client.ephemeral_message_update(
-                stream_id,
-                user_id=message.user_id,
-                set={"text": message.content, "generating": True},
-            )
 
     async def update_message(
         self,

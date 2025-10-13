@@ -583,6 +583,13 @@ class Agent:
                 metadata=metadata,
             )
         )
+        await self.conversation.add_message(
+            Message(
+                content=text,
+                role="assistant",
+                user_id=user_id or self.agent_user.id,
+            )
+        )
 
     def _setup_turn_detection(self):
         if self.turn_detection:

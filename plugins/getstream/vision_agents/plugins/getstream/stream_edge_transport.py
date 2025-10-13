@@ -1,3 +1,4 @@
+import datetime
 import logging
 import asyncio
 import os
@@ -8,7 +9,7 @@ from urllib.parse import urlencode
 import aiortc
 from getstream import AsyncStream
 from getstream.chat.async_client import ChatClient
-from getstream.models import ChannelInput
+from getstream.models import ChannelInput, ChannelMember
 from getstream.video import rtc
 from getstream.video.async_call import Call
 from getstream.video.rtc import ConnectionManager, audio_track
@@ -334,6 +335,45 @@ class StreamEdge(EdgeTransport):
 
         # Create the user in the GetStream system
         await client.create_user(name=name, id=human_id)
+
+        # Ensure that both agent and user get access the demo by adding the user as member and the agent the channel creator
+        channel = client.chat.channel(self.channel_type, call.id)
+        response = await channel.get_or_create(
+            data=ChannelInput(
+                created_by_id=self.agent_user_id,
+                members=[
+                    ChannelMember(
+                        user_id=human_id,
+                        # TODO: get rid of this when codegen for stream-py is fixed, these fields are meaningless
+                        banned=False,
+                        channel_role="",
+                        created_at=datetime.datetime.now(datetime.UTC),
+                        notifications_muted=False,
+                        shadow_banned=False,
+                        updated_at=datetime.datetime.now(datetime.UTC),
+                        custom={},
+                    )
+                ],
+            )
+        )
+
+        if human_id not in [m.user_id for m in response.data.members]:
+            await channel.update(
+                add_members=[
+                    ChannelMember(
+                        user_id=human_id,
+                        # TODO: get rid of this when codegen for stream-py is fixed, these fields are meaningless
+                        banned=False,
+                        channel_role="",
+                        created_at=datetime.datetime.now(datetime.UTC),
+                        notifications_muted=False,
+                        shadow_banned=False,
+                        updated_at=datetime.datetime.now(datetime.UTC),
+                        custom={},
+                    )
+                ]
+            )
+
         # Create user token for browser access
         token = client.create_token(human_id, expiration=3600)
 
@@ -350,7 +390,7 @@ class StreamEdge(EdgeTransport):
             "bitrate": 12000000,
             "w": 1920,
             "h": 1080,
-            # TODO: FPS..., aim at 60fps
+            "channel_type": self.channel_type,
         }
 
         url = f"{base_url}{call.id}?{urlencode(params)}"
@@ -364,24 +404,3 @@ class StreamEdge(EdgeTransport):
             print(f"Please manually open this URL: {url}")
 
         return url
-
-    def open_pronto(self, api_key: str, token: str, call_id: str):
-        """Open browser with the video call URL."""
-        # Use the same URL pattern as the working workout assistant example
-        base_url = f"{os.getenv('EXAMPLE_BASE_URL', 'https://pronto-staging.getstream.io')}/join/"
-        params = {
-            "api_key": api_key,
-            "token": token,
-            "skip_lobby": "true",
-            "video_encoder": "vp8",
-        }
-
-        url = f"{base_url}{call_id}?{urlencode(params)}"
-        self.logger.info(f"🌐 Opening browser: {url}")
-
-        try:
-            webbrowser.open(url)
-            self.logger.info("✅ Browser opened successfully!")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to open browser: {e}")
-            self.logger.info(f"Please manually open this URL: {url}")

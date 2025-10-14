@@ -2,21 +2,16 @@ import logging
 import pytest
 import uuid
 import asyncio
-import os
-from typing import List, Dict
 from unittest.mock import Mock, AsyncMock
 from dotenv import load_dotenv
 
 from getstream.models import MessageRequest, ChannelInput
-from getstream.chat.async_channel import Channel
 from getstream import AsyncStream
 
 from vision_agents.core.agents.conversation import (
-    InMemoryConversation,
     Message,
-    StreamingMessageHandler,
 )
-from vision_agents.plugins.getstream.stream_conversation import StreamConversation, StreamStreamingMessageHandler
+from vision_agents.plugins.getstream.stream_conversation import StreamConversation
 
 logger = logging.getLogger(__name__)
 
@@ -492,7 +487,7 @@ async def test_streaming_message_handling_integration():
 
         from getstream.models import MessagePaginationParams
         channel_state = await channel.get_or_create(state=True, messages=MessagePaginationParams(limit=10))
-        assert len(channel_state.data.messages) == 1, f"Channel state should have 1 message"
+        assert len(channel_state.data.messages) == 1, "Channel state should have 1 message"
         
     except Exception as e:
         # For large messages, this is expected to fail due to Stream's 1000 character limit

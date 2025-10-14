@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 import uuid
@@ -60,6 +61,7 @@ class StreamingMessageHandler(ABC):
         self.pending_fragments: Dict[int, str] = {}
         self.last_content_index = -1
         self._content_created = False
+        self._apply_lock = asyncio.Lock()
 
     async def append_content(
         self, text: str, content_index: Optional[int] = None, finalize: bool = False
@@ -122,21 +124,22 @@ class StreamingMessageHandler(ABC):
 
     async def _apply_pending_fragments(self):
         """Apply pending fragments in sequential order."""
-        while True:
-            next_index = self.last_content_index + 1
-            if next_index in self.pending_fragments:
-                fragment = self.pending_fragments.pop(next_index)
-                self.content += fragment
-                self.last_content_index = next_index
+        async with self._apply_lock:
+            while True:
+                next_index = self.last_content_index + 1
+                if next_index in self.pending_fragments:
+                    fragment = self.pending_fragments.pop(next_index)
+                    self.content += fragment
+                    self.last_content_index = next_index
 
-                # Call _on_content_created for the first content update
-                if not self._content_created:
-                    await self._on_content_created()
-                    self._content_created = True
+                    # Call _on_content_created for the first content update
+                    if not self._content_created:
+                        await self._on_content_created()
+                        self._content_created = True
+                    else:
+                        await self._on_content_changed()
                 else:
-                    await self._on_content_changed()
-            else:
-                break
+                    break
 
     @abstractmethod
     async def _on_content_created(self):
@@ -167,6 +170,7 @@ class Conversation(ABC, Generic[HandlerType]):
         self.instructions = instructions
         self.messages = [m for m in messages]
         self._streaming_handlers: Dict[str, HandlerType] = {}
+        self._handlers_lock = asyncio.Lock()
 
     @abstractmethod
     async def add_message(self, message: Message, completed: bool = True):
@@ -221,7 +225,8 @@ class Conversation(ABC, Generic[HandlerType]):
         Returns:
             The handler if it exists, None otherwise
         """
-        return self._streaming_handlers.get(message_id)
+        async with self._handlers_lock:
+            return self._streaming_handlers.get(message_id)
 
     async def upsert_streaming_message_handler(
         self,
@@ -243,22 +248,24 @@ class Conversation(ABC, Generic[HandlerType]):
         Returns:
             The handler instance
         """
-        handler = self._streaming_handlers.get(message_id)
+        async with self._handlers_lock:
+            handler = self._streaming_handlers.get(message_id)
 
-        if handler is None:
-            # Create new handler
-            handler = self._create_handler(message_id, user_id, role)
-            self._streaming_handlers[message_id] = handler
+            if handler is None:
+                # Create new handler
+                handler = self._create_handler(message_id, user_id, role)
+                self._streaming_handlers[message_id] = handler
 
-        # Add content if provided
+        # Add content if provided (outside the lock to avoid blocking other operations)
         if content:
             await handler.append_content(content, content_index)
 
         return handler
 
-    def _remove_handler(self, message_id: str):
+    async def _remove_handler(self, message_id: str):
         """Remove a handler from the active handlers dict."""
-        self._streaming_handlers.pop(message_id, None)
+        async with self._handlers_lock:
+            self._streaming_handlers.pop(message_id, None)
 
     # Streaming message convenience methods
     async def start_streaming_message(
@@ -395,7 +402,7 @@ class InMemoryStreamingMessageHandler(StreamingMessageHandler):
     async def _on_finalized(self):
         """Remove the handler from the conversation when finalized."""
         if self.conversation:
-            self.conversation._remove_handler(self.message_id)
+            await self.conversation._remove_handler(self.message_id)
 
 
 class InMemoryConversation(Conversation[InMemoryStreamingMessageHandler]):

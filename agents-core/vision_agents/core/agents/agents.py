@@ -134,7 +134,6 @@ class Agent:
         # user and agent we keep an handle for both
         self.conversation: Optional[Conversation] = None
         self._user_conversation_handle: Optional[StreamHandle] = None
-        self._agent_conversation_handle: Optional[StreamHandle] = None
 
         # Track pending transcripts for turn-based response triggering
         self._pending_user_transcripts: Dict[str, str] = {}
@@ -209,7 +208,11 @@ class Agent:
             if self.conversation is None:
                 return
 
-            if self._agent_conversation_handle is None:
+            # Check if we have a streaming handler for this message
+            existing_handler = await self.conversation.get_streaming_message_handler(event.item_id)
+
+            if existing_handler is None:
+                # No streaming handler exists, so this is a non-streaming model - create a new message
                 message = Message(
                     id=event.item_id,
                     content=event.text,
@@ -218,14 +221,14 @@ class Agent:
                 )
                 await self.conversation.add_message(message)
             else:
+                # We have a streaming handler, so deltas were sent - just finalize the message
                 await self.conversation.update_message(
-                    self._agent_conversation_handle.message_id,
+                    existing_handler.message_id,
                     event.text,
-                    self._agent_conversation_handle.user_id,
+                    existing_handler.user_id,
                     True,
                     True,
                 )
-                self._agent_conversation_handle = None
 
         @self.llm.events.subscribe
         async def _handle_output_text_delta(event: LLMResponseChunkEvent):
@@ -236,14 +239,12 @@ class Agent:
             if self.conversation is None:
                 return
 
-            self._agent_conversation_handle = (
-                await self.conversation.upsert_streaming_message_handler(
-                    message_id=event.item_id,
-                    user_id=self.agent_user.id,
-                    role="assistant",
-                    content=event.delta,
-                    content_index=event.content_index,
-                )
+            await self.conversation.upsert_streaming_message_handler(
+                message_id=event.item_id,
+                user_id=self.agent_user.id,
+                role="assistant",
+                content=event.delta,
+                content_index=event.content_index,
             )
 
     async def _setup_speech_events(self):
@@ -251,7 +252,7 @@ class Agent:
         async def on_stt_transcript_event_sync_conversation(event: STTTranscriptEvent):
             self.logger.info(f"🎤 [Transcript]: {event.text}")
 
-            user_id = event.user_id("user")
+            user_id = event.user_id() or "user"
             handler = await self.conversation.get_streaming_message_handler(
                 "stt-" + user_id
             )
@@ -274,7 +275,7 @@ class Agent:
                 # when running in realtime mode, there is no need to send the response to the LLM
                 return
 
-            user_id = event.user_id("user")
+            user_id = event.user_id() or "user"
 
             # Determine how to handle LLM triggering based on turn detection
             if self.turn_detection is not None:
@@ -405,7 +406,6 @@ class Agent:
         """
         self._is_running = False
         self._user_conversation_handle = None
-        self._agent_conversation_handle = None
         self.clear_call_logging_context()
 
         # Disconnect from MCP servers
@@ -774,11 +774,6 @@ class Agent:
                     f"🎥VDP: Applying backoff delay: {backoff_delay:.1f}s"
                 )
                 await asyncio.sleep(backoff_delay)
-
-        # Cleanup and logging
-        self.logger.info(
-            f"🎥VDP: Video processing loop ended for track {track_id} - timeouts: {timeout_errors}, consecutive_errors: {consecutive_errors}"
-        )
 
     async def _on_turn_event(self, event: TurnStartedEvent | TurnEndedEvent) -> None:
         """Handle turn detection events."""

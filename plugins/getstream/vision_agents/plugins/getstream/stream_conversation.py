@@ -73,7 +73,7 @@ class StreamStreamingMessageHandler(StreamingMessageHandler):
                 logger.error(
                     f"Failed to update Stream message {self.stream_message_id}: {e}"
                 )
-                raise
+                # Don't re-raise - let content accumulate in memory and update when finalized
 
         # Also update the message in the conversation's messages list
         if self.conversation:
@@ -100,7 +100,7 @@ class StreamStreamingMessageHandler(StreamingMessageHandler):
 
         # Remove the handler from the conversation when finalized
         if self.conversation:
-            self.conversation._remove_handler(self.message_id)
+            await self.conversation._remove_handler(self.message_id)
 
 
 class StreamConversation(InMemoryConversation):
@@ -215,3 +215,5 @@ class StreamConversation(InMemoryConversation):
                 user_id=message.user_id,
                 set={"text": message.content, "generating": True},
             )
+
+        return None

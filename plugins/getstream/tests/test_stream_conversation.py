@@ -1,5 +1,5 @@
 import logging
-from random import random, shuffle
+from random import shuffle
 
 import pytest
 import uuid

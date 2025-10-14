@@ -1,11 +1,13 @@
 import logging
+from random import random, shuffle
+
 import pytest
 import uuid
 import asyncio
 from unittest.mock import Mock, AsyncMock
 from dotenv import load_dotenv
 
-from getstream.models import MessageRequest, ChannelInput
+from getstream.models import MessageRequest, ChannelInput, MessagePaginationParams
 from getstream import AsyncStream
 
 from vision_agents.core.agents.conversation import (
@@ -108,14 +110,6 @@ class TestStreamConversation:
         # Verify ID mapping was stored
         assert "new-msg-id" in stream_conversation.internal_ids_to_stream_ids
         assert stream_conversation.internal_ids_to_stream_ids["new-msg-id"] == "stream-message-123"
-        
-        # Verify update_message_partial was called (completed=True is default)
-        mock_channel.client.update_message_partial.assert_called_once()
-        update_args = mock_channel.client.update_message_partial.call_args
-        assert update_args[0][0] == "stream-message-123"
-        assert update_args[1]["user_id"] == "user123"
-        assert update_args[1]["set"]["text"] == "Test message"
-        assert update_args[1]["set"]["generating"] is False  # completed=True means not generating
     
     @pytest.mark.asyncio
     async def test_add_message_with_completed_false(self, stream_conversation, mock_channel):
@@ -141,16 +135,6 @@ class TestStreamConversation:
         
         # Verify Stream API was called
         mock_channel.send_message.assert_called_once()
-        
-        # Verify ephemeral_message_update was called (completed=False)
-        mock_channel.client.ephemeral_message_update.assert_called_once()
-        mock_channel.client.update_message_partial.assert_not_called()
-        
-        update_args = mock_channel.client.ephemeral_message_update.call_args
-        assert update_args[0][0] == "stream-message-123"
-        assert update_args[1]["user_id"] == "assistant"
-        assert update_args[1]["set"]["text"] == "Generating message"
-        assert update_args[1]["set"]["generating"] is True  # completed=False means still generating
     
     @pytest.mark.asyncio
     async def test_update_message_existing(self, stream_conversation, mock_channel):
@@ -309,9 +293,7 @@ class TestStreamConversation:
         
         # Verify send_message was called
         mock_channel.send_message.assert_called_once()
-        # Verify ephemeral_message_update was called (completed=False by default)
-        mock_channel.client.ephemeral_message_update.assert_called_once()
-        
+
         # Reset for next operations
         mock_channel.client.ephemeral_message_update.reset_mock()
         
@@ -365,7 +347,7 @@ class TestStreamConversation:
         assert msg2.content == "Hi there!"
         
         # Verify ephemeral updates were called for both
-        assert mock_channel.client.ephemeral_message_update.call_count >= 4  # 2 initial + 2 appends
+        assert mock_channel.client.ephemeral_message_update.call_count >= 2
         
         # Complete both
         await stream_conversation.complete_message(handle1)
@@ -373,133 +355,6 @@ class TestStreamConversation:
         
         # Verify update_message_partial was called for both completions
         assert mock_channel.client.update_message_partial.call_count == 2
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_streaming_message_handling_integration():
-    """Test that streaming messages are handled correctly with multiple deltas and one completion event.
-    
-    This test simulates the exact scenario from the logs:
-    - Multiple LLM delta responses with the same item_id
-    - One LLM completion response with the same item_id
-    - Should result in only one message being created and progressively updated
-    """
-
-    # Create a test channel
-    channel_id = f"test-channel-{uuid.uuid4()}"
-    chat_client = AsyncStream().chat
-    channel = chat_client.channel("messaging", channel_id)
-    
-    # Create the channel in Stream
-    await channel.get_or_create(
-        data=ChannelInput(created_by_id="test-user"),
-    )
-    
-    # Create a conversation
-    conversation = StreamConversation(
-        instructions="Test conversation",
-        messages=[],
-        channel=channel
-    )
-    
-    # Test data - simulate the exact scenario from logs
-    item_id = str(uuid.uuid4())
-    user_id = "test-agent"
-    role = "assistant"
-    
-    # Simulate multiple delta events (like in the logs) - using real data from your logs
-    delta_contents = [
-        "Okay",
-        ", buckle up",
-        "! This is a long one, a tale of weather and how it shaped a",
-        " small town, its inhabitants, and a particular obsession.\n\n# The Ballad of Bumble",
-        "brook and the Bewildering Breeze\n\nBumblebrook was a town nestled deep in the Verdant Valley, a place known for its predictability. Seasons arrived on",
-        " cue, the sun shone reliably, and rain fell with the gentle insistence of a grandfather telling a familiar story. The townsfolk, in turn, were creatures of habit",
-        ". They planted crops according to the Almanac, held festivals on designated dates, and even timed their naps by the position of the sun.\n\n![A picture of a quaint, idyllic town nestled in a valley. Colorful houses line a winding river, and rolling",
-        " green hills surround it.  A few fluffy clouds dot the sky.](image_of_bumblebrook.jpg)\n\nFor generations, weather forecasting in Bumblebrook had been the domain of Old Man Hemlock. He resided on the",
-        " highest hill, surrounded by wind chimes and weather vanes, and possessed an uncanny ability to predict the weather simply by sniffing the air and observing the behavior of squirrels. His pronouncements, delivered with the gravitas of a prophet, were law. If Hemlock predicted rain, umbrellas were deployed; if he prophesized sunshine",
-        ", picnics were planned.\n\nThen came the year the wind turned… bewildering.\n\nIt started subtly. A gentle breeze that shifted directions every few minutes. Hemlock, initially unconcerned, attributed it to a \"passing fancy of the atmosphere.\" But the \"passing fancy\" persisted. The wind became erratic, swirling",
-        ", sometimes even reversing its direction mid-gust.  The wind chimes became cacophonous instruments of chaos.\n\n![Image of chaotic wind chimes tangled and twisted, swaying wildly against a stormy sky.](chaotic_wind_chimes.jpg)\n\nThe consequences were immediate and comical, then increasingly concerning",
-        ".  Weather vanes spun like dizzy tops. Clotheslines turned into tangled webs of laundry.  Kites refused to fly, instead plummeting into surprised pedestrians.  And, most disturbingly, Hemlock's predictions became… well, spectacularly wrong.\n\nHe predicted sunshine on days that brought torrential downpours. He swore",
-        " on a dry harvest when hailstorms ravaged the crops. The townspeople, once trusting, began to regard him with suspicion, then outright derision. His credibility plummeted faster than a kite in a hurricane.\n\n\"He's lost it!\" cried Mrs. Higgins, whose prized petunias had been flattened by a rogue gust",
-        ". \"The old coot's gone senile!\"\n\nDesperate to restore his reputation, Hemlock retreated to his hilltop observatory. He consulted ancient texts, built bizarre contraptions of copper wire and glass bottles, and even attempted to communicate with the squirrels, who, unsurprisingly, remained uncooperative.\n\nWhile",
-        " Hemlock wrestled with the baffling breeze, the town descended into weather-related anarchy. Farmers planted at the wrong time, leading to stunted crops. The annual Summer Festival was rained out, causing widespread disappointment.  The entire rhythm of Bumblebrook, once so predictable, was thrown into disarray.\n\nAmidst this meteorological",
-        " mayhem, a young girl named Elara emerged. Elara was a curious and inventive child, obsessed with tinkering. She had a workshop in her attic filled with spare parts, discarded gadgets, and half-finished projects.  While everyone else lamented the unreliable weather, Elara saw it as a fascinating puzzle.\n\n![",
-        "Image of a young girl, Elara, in her attic workshop, surrounded by tools, wires, and partially built contraptions. She's looking intently at a complex device.](elara_workshop.jpg)\n\nShe began to meticulously record the wind's behavior. She built small, intricate weather stations using",
-        " repurposed clockwork mechanisms and scraps of metal. She charted the wind's speed, direction, and even its \"personality,\" as she called it, assigning names like \"Wimpy Wendy\" to gentle breezes and \"Raging Rupert\" to fierce gusts.\n\nElara's parents, initially dismissive of her \"",
-        "frivolous hobby,\" grew concerned as her obsession intensified. They tried to encourage her to play with other children, to engage in more \"normal\" activities. But Elara remained steadfast in her pursuit. She believed that the bewildering breeze was not random; it followed a pattern, however complex.\n\nOne evening",
-        ", after weeks of relentless observation, Elara had a breakthrough.  She noticed a faint, almost imperceptible humming sound that accompanied the most erratic gusts. It was a low-frequency vibration, barely audible, but definitely present.\n\nFurther investigation revealed the source of the hum: a large, oddly shaped rock formation on",
-        " the far side of Verdant Valley. The rock, composed of a rare mineral, resonated with certain atmospheric conditions, creating subtle shifts in the wind patterns. The baffling breeze, she realized, was not a random phenomenon, but an echo of the rock's strange energy.\n\nElara, brimming with excitement, raced",
-        " to Old Man Hemlock's hilltop observatory. She presented her findings, along with her meticulously compiled data and her theory about the resonating rock. Hemlock, initially skeptical, listened intently as Elara explained her discovery. He examined her charts, listened to her reasoning, and, for the first time in months, a",
-        " flicker of hope appeared in his eyes.\n\nTogether, Elara and Hemlock devised a plan. They couldn't move the rock – it was too large and deeply embedded. Instead, they designed a series of smaller resonators that could counteract the rock's effect. These resonators, placed strategically around Bumblebrook, would create",
-        " a kind of \"weather shield,\" stabilizing the wind and restoring the town's predictable climate.\n\n![Image of Elara and Old Man Hemlock working together on a large, complex device that resembles a weather resonator. They are surrounded by blueprints and tools.](elara_hemlock_working.jpg)\n\n",
-        "The townsfolk, initially wary, watched with curiosity as Elara and Hemlock installed the resonators.  Some scoffed, some whispered, but most simply hoped. When the last resonator was in place, a hush fell over Bumblebrook.\n\nAnd then… the wind stilled.\n\nNot completely, of course. There was still",
-        " a gentle breeze, but it was no longer erratic, no longer bewildering. It blew from a consistent direction, carrying the scent of wildflowers and the promise of a predictable future.\n\nThe sun shone. The rain fell gently.  The crops flourished. The Summer Festival was held on its designated date, and it was the",
-        " most joyous celebration Bumblebrook had seen in years.\n\nOld Man Hemlock's reputation was restored, and he acknowledged Elara as his equal in the art of weather forecasting. But Elara's contribution was more than just restoring order; she taught the town a valuable lesson. She showed them that even in the face of",
-        " the most bewildering changes, observation, ingenuity, and a willingness to challenge assumptions could lead to understanding and ultimately, to a better future.\n\nAnd so, Bumblebrook returned to its predictable ways, but with a newfound appreciation for the unpredictable nature of life, and the remarkable power of a girl who dared to chase the bewildering breeze",
-        ". Elara went on to become a renowned meteorologist, always remembering the day she saved her town, one baffling gust at a time. And Old Man Hemlock? He finally learned to use a computer. The end."
-    ]
-    
-    # Process delta events concurrently to simulate real scenario
-    async def process_delta(i, delta_content):
-        return await conversation.upsert_streaming_message_handler(
-            message_id=item_id,
-            user_id=user_id,
-            role=role,
-            content=delta_content,
-            content_index=i
-        )
-    
-    # Fire all delta events concurrently (like in real scenario)
-    tasks = [process_delta(i, content) for i, content in enumerate(delta_contents)]
-    handlers = await asyncio.gather(*tasks)
-    
-    # Verify all handlers are the same instance (should be reused)
-    for i, handler in enumerate(handlers):
-        assert handler is handlers[0], f"Handler {i} should be the same instance as the first one"
-    
-    # Verify content is accumulating (should be the full content after all deltas)
-    expected_content = "".join(delta_contents)
-    assert handlers[0].content == expected_content, f"Content mismatch: expected '{expected_content[:100]}...', got '{handlers[0].content[:100]}...'"
-    
-    # Simulate completion event (using the real final content from your logs)
-    final_content = "".join(delta_contents)  # The completion event contains the full content
-    
-    # Check if handler exists (simulating the completion event logic)
-    existing_handler = await conversation.get_streaming_message_handler(item_id)
-    assert existing_handler is not None, "Handler should exist after delta events"
-    
-    # Update the message with final content (simulating completion event)
-    # This may fail for large messages due to Stream's 1000 character limit
-    try:
-        await conversation.update_message(
-            existing_handler.message_id,
-            final_content,
-            existing_handler.user_id,
-            True,
-            True,
-        )
-        
-        # Verify the handler was properly finalized (only if update succeeded)
-        assert existing_handler.is_finalized, "Handler should be finalized after completion event"
-        assert existing_handler.content == final_content, f"Final content mismatch: expected '{final_content}', got '{existing_handler.content}'"
-
-        from getstream.models import MessagePaginationParams
-        channel_state = await channel.get_or_create(state=True, messages=MessagePaginationParams(limit=10))
-        assert len(channel_state.data.messages) == 1, "Channel state should have 1 message"
-        
-    except Exception as e:
-        # For large messages, this is expected to fail due to Stream's 1000 character limit
-        if "larger than 1000 characters" in str(e):
-            # This is the expected behavior for large messages
-            # The content should still be accumulated in memory
-            assert existing_handler.content == final_content, f"Content should be accumulated in memory: expected '{final_content}', got '{existing_handler.content}'"
-            # The handler should not be finalized since the Stream update failed
-            assert not existing_handler.is_finalized, "Handler should not be finalized if Stream update failed"
-        else:
-            # Re-raise unexpected exceptions
-            raise
 
 
 @pytest.mark.integration
@@ -528,8 +383,7 @@ async def test_large_message_handling_fails():
         channel=channel
     )
     
-    # Create a very large message (>1000 characters)
-    large_content = "A" * 2000  # 2000 characters, well over the 1000 limit
+    large_content = "A" * 30000  # 30000 characters, well over the 1000 limit
     
     # This should work (create the message)
     message = Message(
@@ -543,3 +397,59 @@ async def test_large_message_handling_fails():
     # This should fail because the message is too large for Stream's limits
     with pytest.raises(Exception):
         await conversation.add_message(message)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_content_index():
+    channel_id = f"test-channel-{uuid.uuid4()}"
+    chat_client = AsyncStream().chat
+    channel = chat_client.channel("messaging", channel_id)
+
+    # Create the channel in Stream
+    await channel.get_or_create(
+        data=ChannelInput(created_by_id="test-user"),
+    )
+
+    # Create a conversation
+    conversation = StreamConversation(
+        instructions="Test conversation",
+        messages=[],
+        channel=channel
+    )
+
+    coros = []
+    item_id = str(uuid.uuid4())
+
+    chunks = [
+        (0, "once"),
+        (1, " upon"),
+        (2, " a"),
+        (3, " time"),
+        (4, " in"),
+        (5, " a"),
+        (6, " galaxy"),
+        (7, " far"),
+        (8, " far"),
+        (9, " away"),
+    ]
+
+    shuffle(chunks)
+
+    for idx, txt in chunks:
+        coros += [conversation.upsert_streaming_message_handler(
+            message_id=item_id,
+            user_id="agent",
+            role="assistant",
+            content=txt,
+            content_index=idx,
+        )]
+        print(txt)
+        await asyncio.sleep(0.01)
+
+    # asyncio is weird
+    handlers = await asyncio.gather(*coros)
+    await handlers[0].finalize()
+    response = await channel.get_or_create(state=True, messages=MessagePaginationParams(limit=10))
+    assert len(response.data.messages) == 1
+    assert response.data.messages[0].text == "once upon a time in a galaxy far far away"

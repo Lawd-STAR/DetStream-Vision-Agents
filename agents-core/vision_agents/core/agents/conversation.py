@@ -122,24 +122,39 @@ class StreamingMessageHandler(ABC):
         self.is_finalized = True
         await self._on_finalized()
 
+    async def update_message(self, text: str, replace_content: bool = True):
+        """Update the message content and finalize it.
+        
+        Args:
+            text: The text content to set/append
+            replace_content: If True, replace the entire content. If False, append to existing content.
+        """
+        if replace_content:
+            await self.set_content(text, finalize=True)
+        else:
+            await self.append_content(text, finalize=True)
+
     async def _apply_pending_fragments(self):
         """Apply pending fragments in sequential order."""
         async with self._apply_lock:
+            fragments_applied = 0
             while True:
                 next_index = self.last_content_index + 1
                 if next_index in self.pending_fragments:
                     fragment = self.pending_fragments.pop(next_index)
                     self.content += fragment
                     self.last_content_index = next_index
-
-                    # Call _on_content_created for the first content update
-                    if not self._content_created:
-                        await self._on_content_created()
-                        self._content_created = True
-                    else:
-                        await self._on_content_changed()
+                    fragments_applied += 1
                 else:
                     break
+            
+            # Only send update to Stream after applying all available fragments
+            if fragments_applied > 0:
+                if not self._content_created:
+                    await self._on_content_created()
+                    self._content_created = True
+                else:
+                    await self._on_content_changed()
 
     @abstractmethod
     async def _on_content_created(self):

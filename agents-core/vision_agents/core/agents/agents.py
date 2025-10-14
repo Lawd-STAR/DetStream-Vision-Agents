@@ -222,13 +222,7 @@ class Agent:
                 await self.conversation.add_message(message)
             else:
                 # We have a streaming handler, so deltas were sent - just finalize the message
-                await self.conversation.update_message(
-                    existing_handler.message_id,
-                    event.text,
-                    existing_handler.user_id,
-                    True,
-                    True,
-                )
+                await existing_handler.update_message(event.text, replace_content=True)
 
         @self.llm.events.subscribe
         async def _handle_output_text_delta(event: LLMResponseChunkEvent):

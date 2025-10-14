@@ -3,6 +3,7 @@ from typing import List, Dict
 
 from getstream.models import MessageRequest
 from getstream.chat.async_channel import Channel
+from getstream.base import StreamAPIException
 
 from vision_agents.core.agents.conversation import (
     InMemoryConversation,
@@ -154,6 +155,10 @@ class StreamConversation(InMemoryConversation):
             custom={"generating": not completed},
         )
         response = await self.channel.send_message(request)
+        if response.data.message.type == "error":
+            raise StreamAPIException(
+                response=response.__response,
+            )
 
         # Store the mapping between internal ID and Stream message ID
         stream_id = response.data.message.id

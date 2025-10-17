@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import uuid
 from typing import Optional, List, Dict, Any
 from getstream.video.rtc.audio_track import AudioStreamTrack
 from getstream.video.rtc.track_util import PcmData
@@ -21,6 +22,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "us.amazon.nova-sonic-v1:0"
 DEFAULT_SAMPLE_RATE = 16000
+
+
+"""
+TODO:
+- audio sending 3-4 functions
+- connect method
+- process response loop
+"""
 
 
 class Realtime(realtime.Realtime):
@@ -65,37 +74,26 @@ class Realtime(realtime.Realtime):
         await llm.close()
     """
     connected : bool = False
-
-    async def _close_impl(self):
-        pass
+    voice_id : str
 
     def __init__(
-        self, 
-        model: str = DEFAULT_MODEL,
-        region_name: str = "us-east-1",
-        aws_access_key_id: Optional[str] = None,
-        aws_secret_access_key: Optional[str] = None,
-        aws_session_token: Optional[str] = None,
-        sample_rate: int = 16000,
-        **kwargs
+            self,
+            model: str = DEFAULT_MODEL,
+            region_name: str = "us-east-1",
+            aws_access_key_id: Optional[str] = None,
+            aws_secret_access_key: Optional[str] = None,
+            aws_session_token: Optional[str] = None,
+            sample_rate: int = 16000,
+            **kwargs
     ) -> None:
         """
-        Initialize Bedrock Realtime with Nova Sonic.
-        
-        Args:
-            model: The Bedrock model ID (default: us.amazon.nova-sonic-v1:0)
-            region_name: AWS region name (default: us-east-1)
-            aws_access_key_id: Optional AWS access key ID
-            aws_secret_access_key: Optional AWS secret access key
-            aws_session_token: Optional AWS session token
-            sample_rate: Audio sample rate in Hz (default: 16000)
-            **kwargs: Additional arguments passed to parent class
+
         """
         super().__init__(**kwargs)
         self.model = model
         self.region_name = region_name
         self.sample_rate = sample_rate
-        
+
         # Initialize Bedrock Runtime client with SDK
         config = Config(
             endpoint_uri=f"https://bedrock-runtime.{region_name}.amazonaws.com",
@@ -104,22 +102,144 @@ class Realtime(realtime.Realtime):
         )
         self.client = BedrockRuntimeClient(config=config)
         self.logger = logging.getLogger(__name__)
-        
+
         # Audio output track - Bedrock typically outputs at 16kHz
         self.output_track = AudioStreamTrack(
             framerate=sample_rate, stereo=False, format="s16"
         )
-        
+
         self._video_forwarder: Optional[VideoForwarder] = None
         self._stream_task: Optional[asyncio.Task[Any]] = None
         self._is_connected = False
         self._message_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
         self._conversation_messages: List[Dict[str, Any]] = []
         self._pending_tool_uses: Dict[int, Dict[str, Any]] = {}  # Track tool calls across stream events
-        
+
         # Audio streaming configuration
         self.prompt_name = "default_prompt"
         self.audio_content_name = "audio_input"
+
+    async def content_input(self, content: str, role: str):
+        """
+        For text input Nova expects content start, text input and then content end
+        This method wraps the 3 events in one operation
+        """
+        content_name = str(uuid.uuid4())
+        await self.content_start(content_name, role)
+        await self.text_input(content_name, content)
+        await self.content_end(content_name)
+
+    async def start_session(self):
+        # subclass this to change the session start
+        event = {
+          "event": {
+            "sessionStart": {
+              "inferenceConfiguration": {
+                "maxTokens": 1024,
+                "topP": 0.9,
+                "temperature": 0.7
+              }
+            }
+          }
+        }
+
+        await self.send_event(event)
+
+    async def start_prompt(self):
+        prompt_name = self.session_id
+        event = {
+          "event": {
+            "promptStart": {
+                "promptName": prompt_name,
+                "textOutputConfiguration": {
+                    "mediaType": "text/plain"
+                },
+                "audioOutputConfiguration": {
+                    "mediaType": "audio/lpcm",
+                    "sampleRateHertz": 24000,
+                    "sampleSizeBits": 16,
+                    "channelCount": 1,
+                    "voiceId": self.voice_id,
+                    "encoding": "base64",
+                    "audioType": "SPEECH"
+                }
+            }
+          }
+        }
+        await self.send_event(event)
+
+
+
+    async def content_start(self, content_name: str, role: str):
+        event = {
+          "event": {
+            "contentStart": {
+                "promptName": self.session_id,
+                "contentName": content_name,
+                "type": "TEXT",
+                "interactive": False,
+                "role": role,
+                "textInputConfiguration": {
+                    "mediaType": "text/plain"
+                }
+            }
+          }
+        }
+        await self.send_event(event)
+
+    async def text_input(self, content_name: str, content: str):
+        event = {
+            "event": {
+                "textInput": {
+                    "promptName": self.session_id,
+                    "contentName": content_name,
+                    "content": content,
+                }
+            }
+        }
+        await self.send_event(event)
+
+    async def content_end(self, content_name: str):
+        event = {
+            "event": {
+                "contentEnd": {
+                    "promptName": self.session_id,
+                    "contentName": content_name,
+                }
+            }
+        }
+        await self.send_event(event)
+
+    async def send_event(self, event: Dict[str, Any]) -> None:
+        event_json = json.dumps(event)
+        event = InvokeModelWithBidirectionalStreamInputChunk(
+            value=BidirectionalInputPayloadPart(bytes_=event_json.encode('utf-8'))
+        )
+        await self.stream.input_stream.send(event)
+
+    async def _close_impl(self):
+        if not self.connected:
+            return
+
+        prompt_end = {
+            "event": {
+                "promptEnd": {
+                    "promptName": self.session_id,
+                }
+            }
+        }
+        await self.send_event(prompt_end)
+
+        session_end = {
+            "event": {
+                "sessionEnd": {}
+            }
+        }
+        await self.send_event(session_end)
+
+        await self.stream.input_stream.close()
+
+
 
     async def connect(self):
         """To connect we need to do a few things
@@ -156,12 +276,7 @@ class Realtime(realtime.Realtime):
         # audio input is always on
         await self.start_audio_input()
 
-    async def send_event(self, event_json):
-        """Send an event to the stream."""
-        event = InvokeModelWithBidirectionalStreamInputChunk(
-            value=BidirectionalInputPayloadPart(bytes_=event_json.encode('utf-8'))
-        )
-        await self.stream.input_stream.send(event)
+
 
     async def start_audio_input(self):
         """Start audio input stream."""

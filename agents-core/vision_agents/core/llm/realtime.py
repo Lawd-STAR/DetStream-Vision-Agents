@@ -38,6 +38,7 @@ class Realtime(LLM, abc.ABC):
 
     """
     fps : int = 1
+    session_id : str # UUID to identify this session
 
     def __init__(
         self,

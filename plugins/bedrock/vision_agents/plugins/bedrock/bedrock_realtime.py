@@ -26,7 +26,6 @@ DEFAULT_SAMPLE_RATE = 16000
 
 """
 TODO:
-- audio sending 3-4 functions
 - connect method
 - process response loop
 """
@@ -80,10 +79,7 @@ class Realtime(realtime.Realtime):
             self,
             model: str = DEFAULT_MODEL,
             region_name: str = "us-east-1",
-            aws_access_key_id: Optional[str] = None,
-            aws_secret_access_key: Optional[str] = None,
-            aws_session_token: Optional[str] = None,
-            sample_rate: int = 16000,
+            voice_id: str = "matthew",
             **kwargs
     ) -> None:
         """
@@ -92,7 +88,8 @@ class Realtime(realtime.Realtime):
         super().__init__(**kwargs)
         self.model = model
         self.region_name = region_name
-        self.sample_rate = sample_rate
+        self.sample_rate = 16000
+        self.voice_id = voice_id
 
         # Initialize Bedrock Runtime client with SDK
         config = Config(
@@ -105,7 +102,7 @@ class Realtime(realtime.Realtime):
 
         # Audio output track - Bedrock typically outputs at 16kHz
         self.output_track = AudioStreamTrack(
-            framerate=sample_rate, stereo=False, format="s16"
+            framerate=self.sample_rate, stereo=False, format="s16"
         )
 
         self._video_forwarder: Optional[VideoForwarder] = None
@@ -116,8 +113,22 @@ class Realtime(realtime.Realtime):
         self._pending_tool_uses: Dict[int, Dict[str, Any]] = {}  # Track tool calls across stream events
 
         # Audio streaming configuration
-        self.prompt_name = "default_prompt"
-        self.audio_content_name = "audio_input"
+        self.prompt_name = self.session_id
+
+    async def simple_audio_response(self, pcm: PcmData):
+        """Send audio data to the model for processing."""
+        if not self.connected:
+            self.logger.warning("realtime is not active. can't call simple_audio_response")
+
+        content_name = str(uuid.uuid4())
+        audio_bytes = pcm.samples.tobytes()
+
+        await self.audio_content_start(content_name)
+        self._emit_audio_input_event(audio_bytes, sample_rate=pcm.sample_rate)
+
+        await self.audio_input(content_name, audio_bytes)
+
+        await self.content_end(content_name)
 
     async def content_input(self, content: str, role: str):
         """
@@ -125,9 +136,43 @@ class Realtime(realtime.Realtime):
         This method wraps the 3 events in one operation
         """
         content_name = str(uuid.uuid4())
-        await self.content_start(content_name, role)
+        await self.text_content_start(content_name, role)
         await self.text_input(content_name, content)
         await self.content_end(content_name)
+
+    async def audio_input(self, content_name: str, audio_bytes: bytes):
+        audio_event = {
+            "event": {
+                "audioInput": {
+                    "promptName": self.session_id,
+                    "contentName": content_name,
+                    "content": audio_bytes.decode('utf-8')
+                }
+            }
+        }
+        await self.send_event(audio_event)
+
+    async def audio_content_start(self, content_name: str, role: str="USER"):
+        event = {
+          "event": {
+            "contentStart": {
+                "promptName": self.session_id,
+                "contentName": content_name,
+                "type": "AUDIO",
+                "interactive": True,
+                "role": role,
+                "audioInputConfiguration": {
+                    "mediaType": "audio/lpcm",
+                    "sampleRateHertz": 16000,
+                    "sampleSizeBits": 16,
+                    "channelCount": 1,
+                    "audioType": "SPEECH",
+                    "encoding": "base64"
+                }
+            }
+          }
+        }
+        await self.send_event(event)
 
     async def start_session(self):
         # subclass this to change the session start
@@ -170,7 +215,7 @@ class Realtime(realtime.Realtime):
 
 
 
-    async def content_start(self, content_name: str, role: str):
+    async def text_content_start(self, content_name: str, role: str):
         event = {
           "event": {
             "contentStart": {
@@ -276,71 +321,6 @@ class Realtime(realtime.Realtime):
         # audio input is always on
         await self.start_audio_input()
 
-
-
-    async def start_audio_input(self):
-        """Start audio input stream."""
-        audio_content_start = f'''
-        {{
-            "event": {{
-                "contentStart": {{
-                    "promptName": "{self.prompt_name}",
-                    "contentName": "{self.audio_content_name}",
-                    "type": "AUDIO",
-                    "interactive": true,
-                    "role": "USER",
-                    "audioInputConfiguration": {{
-                        "mediaType": "audio/lpcm",
-                        "sampleRateHertz": 48000,
-                        "sampleSizeBits": 16,
-                        "channelCount": 1,
-                        "audioType": "SPEECH",
-                        "encoding": "base64"
-                    }}
-                }}
-            }}
-        }}
-        '''
-        await self.send_event(audio_content_start)
-
-    @property
-    def is_active(self) -> bool:
-        """Return True if the session is active and ready to send/receive."""
-        return self._is_connected
-
-    async def send_audio_chunk(self, audio_bytes):
-        """Send an audio chunk to the stream."""
-        if not self.is_active:
-            return
-            
-        blob = base64.b64encode(audio_bytes)
-        audio_event = f'''
-        {{
-            "event": {{
-                "audioInput": {{
-                    "promptName": "{self.prompt_name}",
-                    "contentName": "{self.audio_content_name}",
-                    "content": "{blob.decode('utf-8')}"
-                }}
-            }}
-        }}
-        '''
-        await self.send_event(audio_event)
-
-    async def simple_audio_response(self, pcm: PcmData):
-        """Send audio data to the model for processing."""
-        if not self.is_active:
-            self.logger.warning("Cannot send audio: session not active")
-            return
-            
-        # Convert PCM samples to bytes
-        audio_bytes = pcm.samples.tobytes()
-        
-        # Send the audio chunk
-        await self.send_audio_chunk(audio_bytes)
-        
-        # Emit audio input event for tracking
-        self._emit_audio_input_event(audio_bytes, sample_rate=pcm.sample_rate)
 
     async def _process_output_stream(self):
         """Process the output stream from the model."""

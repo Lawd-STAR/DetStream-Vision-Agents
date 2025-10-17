@@ -158,10 +158,14 @@ class LLM(abc.ABC):
         """
         self.agent = agent
         self._conversation = agent.conversation
-        self.instructions = agent.instructions
-        
+        self._set_instructions(agent.instructions)
+
+
+    def _set_instructions(self, instructions: str):
+        self.instructions = instructions
+
         # Parse instructions to extract @ mentioned markdown files
-        self.parsed_instructions = parse_instructions(agent.instructions)
+        self.parsed_instructions = parse_instructions(instructions)
 
     def register_function(self, 
                          name: Optional[str] = None,

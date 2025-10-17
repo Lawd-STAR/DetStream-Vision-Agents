@@ -1,3 +1,4 @@
+import os
 from typing import Optional, List, TYPE_CHECKING, Any, Dict
 import json
 import boto3
@@ -23,7 +24,7 @@ class BedrockLLM(LLM):
     Converse docs can be found here:
     https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock-runtime/client/converse.html
 
-    Chat history has to be manually passed
+    Chat history has to be manually passed, there is no conversation storage.
     
     Examples:
     
@@ -65,8 +66,12 @@ class BedrockLLM(LLM):
             session_kwargs["aws_secret_access_key"] = aws_secret_access_key
         if aws_session_token:
             session_kwargs["aws_session_token"] = aws_session_token
+
+        if os.environ.get("AWS_BEDROCK_API_KEY"):
+            session_kwargs["aws_session_token"] = os.environ["AWS_BEDROCK_API_KEY"]
             
         self.client = boto3.client("bedrock-runtime", **session_kwargs)
+
         self.region_name = region_name
 
     async def simple_response(
@@ -87,7 +92,7 @@ class BedrockLLM(LLM):
         
             await llm.simple_response("say hi to the user")
         """
-        return await self.converse(
+        return await self.converse_stream(
             messages=[{"role": "user", "content": [{"text": text}]}]
         )
 
@@ -105,6 +110,11 @@ class BedrockLLM(LLM):
             kwargs["toolConfig"] = {
                 "tools": self._convert_tools_to_provider_format(tools)
             }
+
+        # Combine original instructions with markdown file contents
+        enhanced_instructions = self._build_enhanced_instructions()
+        if enhanced_instructions:
+            kwargs["system"] = [{"text": enhanced_instructions}]
 
         # Ensure the AI remembers the past conversation
         new_messages = kwargs.get("messages", [])
@@ -189,10 +199,10 @@ class BedrockLLM(LLM):
                     llm_response = LLMResponseEvent(final_response, self._extract_text_from_response(final_response))
             
             self.events.send(LLMResponseCompletedEvent(original=response, text=text, plugin_name="bedrock"))
-            
+
         except ClientError as e:
             error_msg = f"Bedrock API error: {str(e)}"
-            llm_response = LLMResponseEvent(None, error_msg)
+            llm_response = LLMResponseEvent(None, error_msg, exception = e)
             
         return llm_response
 
@@ -218,6 +228,11 @@ class BedrockLLM(LLM):
             normalized_messages = self._normalize_message(new_messages)
             for msg in normalized_messages:
                 self._conversation.messages.append(msg)
+
+        # Combine original instructions with markdown file contents
+        enhanced_instructions = self._build_enhanced_instructions()
+        if enhanced_instructions:
+            kwargs["system"] = [{"text": enhanced_instructions}]
 
         try:
             response = self.client.converse_stream(**kwargs)

@@ -23,9 +23,10 @@ T = TypeVar("T")
 
 
 class LLMResponseEvent(Generic[T]):
-    def __init__(self, original: T, text: str):
+    def __init__(self, original: T, text: str, exception: Optional[Exception] = None):
         self.original = original
         self.text = text
+        self.exception = exception
 
 
 BeforeCb = Callable[[List[Any]], None]

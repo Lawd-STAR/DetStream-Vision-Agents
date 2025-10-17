@@ -19,19 +19,11 @@ if TYPE_CHECKING:
 class BedrockLLM(LLM):
     """
     AWS Bedrock LLM integration for Vision Agents.
-    
-    Provides access to AWS Bedrock models including Claude, Titan, Llama and more.
-    Standardizes the minimal feature set needed for agent integration.
-    
-    The agent requires standardization of:
-    - sharing instructions
-    - keeping conversation history
-    - response normalization
-    
-    Notes on the Bedrock integration:
-    - Uses boto3 bedrock-runtime client
-    - Supports both streaming and non-streaming responses
-    - History is maintained manually by keeping it in memory
+
+    Converse docs can be found here:
+    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock-runtime/client/converse.html
+
+    Chat history has to be manually passed
     
     Examples:
     

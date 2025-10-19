@@ -19,7 +19,7 @@ class TestBedrockRealtime:
         # Note: Nova Sonic requires a specialized WebSocket API, not ConverseStream
         # Using Claude for testing as it supports ConverseStream
         realtime = Realtime(
-            model="anthropic.claude-3-haiku-20240307-v1:0",
+            model="amazon.nova-sonic-v1:0",
             region_name="us-east-1",
         )
         try:
@@ -32,6 +32,7 @@ class TestBedrockRealtime:
         """Test sending a simple text message and receiving response"""
         # Send a simple message
         events = []
+        realtime._set_instructions("whenever you reply mention a fun fact about The Netherlands")
         
         @realtime.events.subscribe
         async def on_audio(event: RealtimeAudioOutputEvent):
@@ -42,7 +43,7 @@ class TestBedrockRealtime:
         await realtime.simple_response("Hello, can you hear me? Please respond with a short greeting.")
 
         # Wait for response
-        await asyncio.sleep(5.0)
+        await asyncio.sleep(10.0)
         
         # Note: Depending on model capabilities, audio events may or may not be generated
         # The test passes if no exceptions are raised

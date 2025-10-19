@@ -14,11 +14,13 @@ from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
 
 from vision_agents.core.utils.video_forwarder import VideoForwarder
 from . import events
+from vision_agents.core.processors import Processor
+from vision_agents.core.edge.types import Participant
 
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_MODEL = "us.amazon.nova-sonic-v1:0"
+DEFAULT_MODEL = "amazon.nova-sonic-v1:0"
 DEFAULT_SAMPLE_RATE = 16000
 
 
@@ -134,6 +136,7 @@ class Realtime(realtime.Realtime):
             return
 
         # Initialize the stream
+        logger.info("Connecting to Bedrock for model %s", self.model)
         self.stream = await self.client.invoke_model_with_bidirectional_stream(
             InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model)
         )

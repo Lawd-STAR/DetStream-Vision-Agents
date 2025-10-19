@@ -6,8 +6,6 @@ import uuid
 from typing import Optional, List, Dict, Any
 from getstream.video.rtc.audio_track import AudioStreamTrack
 from getstream.video.rtc.track_util import PcmData
-
-from vision_agents.core.edge.types import Participant
 from vision_agents.core.llm import realtime
 from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
 from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
@@ -26,8 +24,10 @@ DEFAULT_SAMPLE_RATE = 16000
 
 """
 TODO:
-- connect method
-- process response loop
+- Figure out auth issues AWS SDK bedrock
+- Cleanup process event loop
+- Cleanup function calling
+- Cleanup chat integration
 """
 
 
@@ -115,6 +115,41 @@ class Realtime(realtime.Realtime):
         # Audio streaming configuration
         self.prompt_name = self.session_id
 
+    async def connect(self):
+        """To connect we need to do a few things
+
+        - start a bi directional stream
+        - send session start event
+        - send prompt start event
+        - send text content start, text content, text content end
+
+        Two unusual things here are that you have
+        - 2 init events (session and prompt start)
+        - text content is wrapped
+
+        The init events should be easy to customize
+        """
+        if self.connected:
+            self.logger.warning("Already connected")
+            return
+
+        # Initialize the stream
+        self.stream = await self.client.invoke_model_with_bidirectional_stream(
+            InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model)
+        )
+        self.connected = True
+
+        # Start listener task
+        self.event_handler = asyncio.create_task(self._handle_events())
+
+        # send start and prompt event
+        await self.start_session()
+        await self.start_prompt()
+
+        # next send system instructions
+        system_instructions = self._build_enhanced_instructions()
+        await self.content_input(system_instructions, "SYSTEM")
+
     async def simple_audio_response(self, pcm: PcmData):
         """Send audio data to the model for processing."""
         if not self.connected:
@@ -129,6 +164,19 @@ class Realtime(realtime.Realtime):
         await self.audio_input(content_name, audio_bytes)
 
         await self.content_end(content_name)
+
+    async def simple_response(self, text: str, processors: Optional[List[Processor]] = None,
+                              participant: Optional[Participant] = None):
+        """
+        Simple response standardizes how to send a text instruction to this LLM.
+
+        Example:
+            llm.simple_response("tell me a poem about Boulder")
+
+        For more advanced use cases you can use the native send_realtime_input
+        """
+        self.logger.info("Simple response called with text: %s", text)
+        await self.content_input(content=text, role="USER")
 
     async def content_input(self, content: str, role: str):
         """
@@ -286,59 +334,100 @@ class Realtime(realtime.Realtime):
 
 
 
-    async def connect(self):
-        """To connect we need to do a few things
-
-        - start a bi directional stream
-        - send session start event
-        - send prompt start event
-        - send text content start, text content, text content end
-
-        Two unusual things here are that you have
-        - 2 init events (session and prompt start)
-        - text content is wrapped
-
-        The init events should be easy to customize
-        """
-        if self._is_connected:
-            self.logger.warning("Already connected")
-            return
-            
-        # Create the input stream operation
-        input_operation = InvokeModelWithBidirectionalStreamOperationInput(
-            model_id=self.model
-        )
-        
-        # Start the bidirectional stream
-        self.stream = await self.client.invoke_model_with_bidirectional_stream(input_operation)
-        
-        self.connected = True
-        self.logger.info(f"Connected to Bedrock model: {self.model}")
-        
-        # Start processing the output stream asynchronously
-        self._stream_task = asyncio.create_task(self._process_output_stream())
-
-        # audio input is always on
-        await self.start_audio_input()
 
 
-    async def _process_output_stream(self):
-        """Process the output stream from the model."""
+    async def _handle_events(self):
+        """Process incoming responses from Bedrock."""
         try:
-            async for chunk in self.stream.output_stream:
-                if chunk.value and chunk.value.bytes_:
-                    # Decode the JSON payload
-                    payload_json = chunk.value.bytes_.decode('utf-8')
-                    try:
-                        payload = json.loads(payload_json)
-                        await self._handle_output_payload(payload)
-                    except json.JSONDecodeError as e:
-                        self.logger.error(f"Failed to decode JSON payload: {e}")
-        except Exception as e:
-            self.logger.error(f"Error processing output stream: {e}")
-            self._is_connected = False
+            while self.connected:
+                try:
+                    output = await self.stream.await_output()
+                    result = await output[1].receive()
+                    if result.value and result.value.bytes_:
+                        try:
+                            response_data = result.value.bytes_.decode('utf-8')
+                            json_data = json.loads(response_data)
+                            logger.info(f"Response from Bedrock: {json_data}")
 
-    async def _handle_output_payload(self, payload: Dict[str, Any]):
-        """Handle the output payload from the model."""
-        # Add payload to message queue for processing
-        await self._message_queue.put(payload)
+                            # Handle different response types
+                            if 'event' in json_data:
+                                if 'contentStart' in json_data['event']:
+                                    content_start = json_data['event']['contentStart']
+                                    # set role
+                                    self.role = content_start['role']
+                                    # Check for speculative content
+                                    if 'additionalModelFields' in content_start:
+                                        try:
+                                            additional_fields = json.loads(content_start['additionalModelFields'])
+                                            if additional_fields.get('generationStage') == 'SPECULATIVE':
+                                                self.display_assistant_text = True
+                                            else:
+                                                self.display_assistant_text = False
+                                        except json.JSONDecodeError:
+                                            pass
+                                elif 'textOutput' in json_data['event']:
+                                    text_content = json_data['event']['textOutput']['content']
+                                    role = json_data['event']['textOutput']['role']
+                                    # Check if there is a barge-in
+                                    if '{ "interrupted" : true }' in text_content:
+                                        self.barge_in = True
+
+                                    if not self.display_assistant_text:
+                                        #TODOself.chat_history.add_message(role, text_content)
+                                        pass
+
+                                    if (self.role == "ASSISTANT" and self.display_assistant_text):
+                                        print(f"Assistant: {text_content}")
+                                    elif (self.role == "USER"):
+                                        print(f"User: {text_content}")
+
+                                elif 'audioOutput' in json_data['event']:
+                                    audio_content = json_data['event']['audioOutput']['content']
+                                    audio_bytes = base64.b64decode(audio_content)
+                                    await self.audio_output_queue.put(audio_bytes)
+                                elif 'toolUse' in json_data['event']:
+                                    self.toolUseContent = json_data['event']['toolUse']
+                                    self.toolName = json_data['event']['toolUse']['toolName']
+                                    self.toolUseId = json_data['event']['toolUse']['toolUseId']
+                                    # Add tool use to chat history
+                                    # TODO
+                                    #self.chat_history.add_tool_call(
+                                    #    tool_use_content=self.toolUseContent
+                                    #)
+                                elif 'contentEnd' in json_data['event'] and json_data['event'].get('contentEnd',
+                                                                                                   {}).get(
+                                        'type') == 'TOOL':
+                                    toolResult = await self.processToolUse(self.toolName, self.toolUseContent)
+                                    # Update tool use in history with result
+                                    self.chat_history.add_tool_result(self.toolUseId, toolResult)
+                                    toolContent = str(uuid.uuid4())
+                                    await self.send_tool_start_event(toolContent)
+                                    await self.send_tool_result_event(toolContent, toolResult)
+                                    await self.send_tool_content_end_event(toolContent)
+
+                                elif 'completionEnd' in json_data['event']:
+                                    # Handle end of conversation, no more response will be generated
+                                    print("End of response sequence")
+
+                            # Put the response in the output queue for other components
+                            #await self.output_queue.put(json_data)
+                        except json.JSONDecodeError:
+                            pass
+                            #await self.output_queue.put({"raw_data": response_data})
+                except StopAsyncIteration:
+                    # Stream has ended
+                    break
+                except Exception as e:
+                    # Handle ValidationException properly
+                    if "ValidationException" in str(e):
+                        error_message = str(e)
+                        print(f"Validation error: {error_message}")
+                    else:
+                        print(f"Error receiving response: {e}")
+                    break
+
+        except Exception as e:
+            print(f"Response processing error: {e}")
+        finally:
+            self.connected = False
+

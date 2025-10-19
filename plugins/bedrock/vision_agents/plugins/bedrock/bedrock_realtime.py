@@ -16,6 +16,7 @@ from vision_agents.core.utils.video_forwarder import VideoForwarder
 from . import events
 from vision_agents.core.processors import Processor
 from vision_agents.core.edge.types import Participant
+from ...core.llm.events import RealtimeAudioOutputEvent
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,8 @@ DEFAULT_SAMPLE_RATE = 16000
 
 """
 TODO:
-- Figure out auth issues AWS SDK bedrock
+
+- Fix audio input event
 - Cleanup process event loop
 - Cleanup function calling
 - Cleanup chat integration
@@ -50,6 +52,7 @@ class Realtime(realtime.Realtime):
         full: https://github.com/aws-samples/amazon-nova-samples/blob/main/speech-to-speech/sample-codes/console-python/nova_sonic.py
         tool use: https://github.com/aws-samples/amazon-nova-samples/blob/main/speech-to-speech/sample-codes/console-python/nova_sonic_tool_use.py
 
+    Input event docs: https://docs.aws.amazon.com/nova/latest/userguide/input-events.html
     Available voices are documented here:
     https://docs.aws.amazon.com/nova/latest/userguide/available-voices.html
     
@@ -151,6 +154,8 @@ class Realtime(realtime.Realtime):
 
         # next send system instructions
         system_instructions = self._build_enhanced_instructions()
+        if not system_instructions:
+            raise Exception("bedrock requires system instructions before sending regular user input")
         await self.content_input(system_instructions, "SYSTEM")
 
     async def simple_audio_response(self, pcm: PcmData):
@@ -159,12 +164,13 @@ class Realtime(realtime.Realtime):
             self.logger.warning("realtime is not active. can't call simple_audio_response")
 
         content_name = str(uuid.uuid4())
-        audio_bytes = pcm.samples.tobytes()
+        audio_bytes = pcm
 
         await self.audio_content_start(content_name)
         self._emit_audio_input_event(audio_bytes, sample_rate=pcm.sample_rate)
-
-        await self.audio_input(content_name, audio_bytes)
+        # Convert PcmData to base64 encoded bytes
+        audio_base64 = base64.b64encode(audio_bytes.samples).decode('utf-8')
+        await self.audio_input(content_name, audio_base64)
 
         await self.content_end(content_name)
 
@@ -191,13 +197,13 @@ class Realtime(realtime.Realtime):
         await self.text_input(content_name, content)
         await self.content_end(content_name)
 
-    async def audio_input(self, content_name: str, audio_bytes: bytes):
+    async def audio_input(self, content_name: str, audio_bytes: str):
         audio_event = {
             "event": {
                 "audioInput": {
                     "promptName": self.session_id,
                     "contentName": content_name,
-                    "content": audio_bytes.decode('utf-8')
+                    "content": audio_bytes
                 }
             }
         }
@@ -348,9 +354,11 @@ class Realtime(realtime.Realtime):
                     result = await output[1].receive()
                     if result.value and result.value.bytes_:
                         try:
+                            logger.info("attempt")
                             response_data = result.value.bytes_.decode('utf-8')
+                            logger.info(f"Response from Bedrock: {response_data}")
+
                             json_data = json.loads(response_data)
-                            logger.info(f"Response from Bedrock: {json_data}")
 
                             # Handle different response types
                             if 'event' in json_data:
@@ -387,7 +395,17 @@ class Realtime(realtime.Realtime):
                                 elif 'audioOutput' in json_data['event']:
                                     audio_content = json_data['event']['audioOutput']['content']
                                     audio_bytes = base64.b64decode(audio_content)
-                                    await self.audio_output_queue.put(audio_bytes)
+                                    #await self.audio_output_queue.put(audio_bytes)
+
+                                    audio_event = RealtimeAudioOutputEvent(
+                                        plugin_name="gemini",
+                                        audio_data=audio_content,
+                                        sample_rate=24000
+                                    )
+                                    self.events.send(audio_event)
+
+                                    await self.output_track.write(audio_content)
+
                                 elif 'toolUse' in json_data['event']:
                                     self.toolUseContent = json_data['event']['toolUse']
                                     self.toolName = json_data['event']['toolUse']['toolName']
@@ -419,8 +437,10 @@ class Realtime(realtime.Realtime):
                             #await self.output_queue.put({"raw_data": response_data})
                 except StopAsyncIteration:
                     # Stream has ended
+                    logger.error("Stop async iteration exception")
                     break
                 except Exception as e:
+                    logger.error("Error, %s", e)
                     # Handle ValidationException properly
                     if "ValidationException" in str(e):
                         error_message = str(e)
@@ -430,6 +450,7 @@ class Realtime(realtime.Realtime):
                     break
 
         except Exception as e:
+            logger.error("Error, %s", e)
             print(f"Response processing error: {e}")
         finally:
             self.connected = False

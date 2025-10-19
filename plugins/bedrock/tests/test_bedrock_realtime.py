@@ -22,6 +22,7 @@ class TestBedrockRealtime:
             model="amazon.nova-sonic-v1:0",
             region_name="us-east-1",
         )
+        realtime._set_instructions("you're a kind assistant, always be friendly please.")
         try:
             yield realtime
         finally:
@@ -61,15 +62,15 @@ class TestBedrockRealtime:
         await asyncio.sleep(0.01)
         await realtime.connect()
         
-        #await realtime.simple_response("Listen to the following story, what is Mia looking for?")
-        #await asyncio.sleep(10.0)
-        #await realtime.simple_audio_response(mia_audio_16khz)
+        await realtime.simple_response("Listen to the following story, what is Mia looking for?")
+        await asyncio.sleep(10.0)
+        await realtime.simple_audio_response(mia_audio_16khz)
 
         # Wait a moment to ensure processing
-        #await asyncio.sleep(10.0)
+        await asyncio.sleep(10.0)
         
         # Test passes if no exceptions are raised
-        #assert True
+        assert True
 
     @pytest.mark.integration
     async def test_video_sending_flow(self, realtime, bunny_video_track):

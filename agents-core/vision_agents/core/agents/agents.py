@@ -105,6 +105,7 @@ class Agent:
         self.instructions = instructions
         self.edge = edge
         self.agent_user = agent_user
+        self._agent_user_initialized = False
 
         # only needed in case we spin threads
         self._root_span = trace.get_current_span()
@@ -329,6 +330,8 @@ class Agent:
                 await self.simple_response(event.text, event.user_metadata)
 
     async def join(self, call: Call) -> "AgentSessionContextManager":
+        await self.create_user()
+
         # TODO: validation. join can only be called once
         with self.tracer.start_as_current_span("join"):
             if self._is_running:
@@ -516,16 +519,19 @@ class Agent:
             clear_call_context(self._call_context_token)
             self._call_context_token = None
 
-    async def create_user(self):
-        """Create the agent user in the edge provider, if required.
+    async def create_user(self) -> None:
+        """Create the agent user in the edge provider, if required."""
 
-        Returns:
-            Provider-specific user creation response.
-        """
+        if self._agent_user_initialized:
+            return None
+
         with self.tracer.start_as_current_span("edge.create_user"):
-            if self.agent_user.id == "":
-                self.agent_user.id = str(uuid4())
-            return await self.edge.create_user(self.agent_user)
+            if not self.agent_user.id:
+                self.agent_user.id = f"agent-{uuid4()}"
+            await self.edge.create_user(self.agent_user)
+            self._agent_user_initialized = True
+
+        return None
 
     def _on_vad_audio(self, event: VADAudioEvent):
         self.logger.info(f"Vad audio event {self._truncate_for_logging(event)}")
@@ -614,7 +620,7 @@ class Agent:
                 metadata=metadata,
             )
         )
-        # Unified API: simple non-streaming message
+
         if self.conversation is not None:
             await self.conversation.upsert_message(
                 role="assistant",

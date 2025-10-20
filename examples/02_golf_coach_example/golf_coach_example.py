@@ -21,8 +21,6 @@ async def start_agent() -> None:
         ],  # realtime pose detection with yolo
     )
 
-    await agent.create_user()
-
     # create a call, some other video networks call this a room
     call = agent.edge.client.video.call("default", str(uuid4()))
 

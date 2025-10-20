@@ -29,7 +29,6 @@ async def start_agent() -> None:
         # realtime version (vad, tts and stt not needed)
         # llm=openai.Realtime()
     )
-    await agent.create_user()
 
     # Create a call
     call = agent.edge.client.video.call("default", str(uuid4()))

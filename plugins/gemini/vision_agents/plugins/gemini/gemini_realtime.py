@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from asyncio import CancelledError
 from typing import Optional, List, Dict, Any
 from getstream.video.rtc.audio_track import AudioStreamTrack
 from getstream.video.rtc.track_util import PcmData
@@ -241,6 +242,9 @@ class Realtime(realtime.Realtime):
                         await self._handle_tool_call(server_message.tool_call)
                     else:
                         self.logger.warning("Unrecognized event structure for gemini %s", server_message)
+        except CancelledError:
+            logger.error("Stop async iteration exception")
+            return
         except Exception as e:
             # reconnect here for some errors
             self.logger.error(f"_receive_loop error: {e}")

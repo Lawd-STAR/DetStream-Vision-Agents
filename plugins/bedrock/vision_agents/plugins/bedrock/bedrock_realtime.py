@@ -5,7 +5,6 @@ import logging
 import uuid
 from typing import Optional, List, Dict, Any
 from getstream.video.rtc.audio_track import AudioStreamTrack
-from hatch.cli import self
 
 from vision_agents.core.llm import realtime
 from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
@@ -14,7 +13,6 @@ from aws_sdk_bedrock_runtime.config import Config
 from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
 
 from vision_agents.core.utils.video_forwarder import VideoForwarder
-from . import events
 from vision_agents.core.processors import Processor
 from vision_agents.core.edge.types import Participant
 from vision_agents.core.edge.types import PcmData
@@ -382,27 +380,25 @@ class Realtime(realtime.Realtime):
                                             pass
                                 elif 'textOutput' in json_data['event']:
                                     text_content = json_data['event']['textOutput']['content']
-                                    role = json_data['event']['textOutput']['role']
+                                    #role = json_data['event']['textOutput']['role']
                                     logger.info(f"Text output from Bedrock: {text_content}")
                                 elif 'completionStart' in json_data['event']:
                                     logger.info("Completion start from Bedrock", json_data['event']['completionStart'])
                                 elif 'audioOutput' in json_data['event']:
                                     logger.info("Audio output from Bedrock")
-                                    try:
-                                        audio_content = json_data['event']['audioOutput']['content']
-                                        audio_bytes = base64.b64decode(audio_content)
-                                        #await self.audio_output_queue.put(audio_bytes)
+                                    audio_content = json_data['event']['audioOutput']['content']
+                                    audio_bytes = base64.b64decode(audio_content)
+                                    #await self.audio_output_queue.put(audio_bytes)
 
-                                        audio_event = RealtimeAudioOutputEvent(
-                                            plugin_name="gemini",
-                                            audio_data=audio_bytes,
-                                            sample_rate=24000
-                                        )
-                                        self.events.send(audio_event)
+                                    audio_event = RealtimeAudioOutputEvent(
+                                        plugin_name="gemini",
+                                        audio_data=audio_bytes,
+                                        sample_rate=24000
+                                    )
+                                    self.events.send(audio_event)
 
-                                        await self.output_track.write(audio_bytes)
-                                    except Exception as e:
-                                        import pdb; pdb.set_trace()
+                                    await self.output_track.write(audio_bytes)
+
 
                                 elif 'toolUse' in json_data['event']:
                                     logger.info(f"Tool use from Bedrock: {json_data['event']['toolUse']}")

@@ -509,7 +509,7 @@ class EventManager:
     async def _process_single_event(self, event):
         """Process a single event."""
         for handler in self._handlers.get(event.type, []):
-            module_name = getattr(handler, '__module__', 'unknown')
+            #module_name = getattr(handler, '__module__', 'unknown')
             if event.type not in self._silent_events:
                 pass
                 #logger.info(f"Called handler {handler.__name__} from {module_name} for event {event.type}")

@@ -12,7 +12,6 @@ import abc
 import logging
 import uuid
 
-from vision_agents.core.events import PluginClosedEvent
 
 from . import events, LLM
 

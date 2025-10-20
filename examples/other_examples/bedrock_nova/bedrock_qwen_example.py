@@ -19,7 +19,7 @@ async def start_agent() -> None:
         edge=getstream.Edge(),
         agent_user=User(name="Friendly AI"),
         instructions="Be nice to the user",
-        llm=bedrock.LLM(model="anthropic.claude-3-5-sonnet-20241022-v2:0"),
+        llm=bedrock.LLM(model="qwen.qwen3-32b-v1:0"),
         tts=cartesia.TTS(),
         stt=deepgram.STT(),
         turn_detection=smart_turn.TurnDetection(buffer_duration=2.0, confidence_threshold=0.5),

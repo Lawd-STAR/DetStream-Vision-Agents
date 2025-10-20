@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from vision_agents.core import User
 from vision_agents.core.agents import Agent
-from vision_agents.plugins import bedrock, getstream
+from vision_agents.plugins import bedrock, getstream, cartesia, deepgram, smart_turn
 
 load_dotenv()
 
@@ -20,6 +20,10 @@ async def start_agent() -> None:
         agent_user=User(name="Friendly AI"),
         instructions="Be nice to the user",
         llm=bedrock.LLM(model="anthropic.claude-3-5-sonnet-20241022-v2:0"),
+        tts=cartesia.TTS(),
+        stt=deepgram.STT(),
+        turn_detection=smart_turn.TurnDetection(buffer_duration=2.0, confidence_threshold=0.5),
+        # Enable turn detection with FAL/ Smart turn
     )
     await agent.create_user()
 
@@ -29,6 +33,7 @@ async def start_agent() -> None:
     with await agent.join(call):
         await asyncio.sleep(5)
         await agent.llm.simple_response(text="Say hi")
+        await agent.finish()
 
 
 if __name__ == "__main__":

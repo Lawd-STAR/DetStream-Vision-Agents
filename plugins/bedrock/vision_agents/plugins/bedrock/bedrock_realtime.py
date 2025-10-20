@@ -162,6 +162,7 @@ class Realtime(realtime.Realtime):
         if not self.connected:
             self.logger.warning("realtime is not active. can't call simple_audio_response")
 
+        logger.info("sar")
         #self.logger.info("Simple audio response for model %s", self.model)
         content_name = str(uuid.uuid4())
         audio_bytes = pcm
@@ -354,6 +355,7 @@ class Realtime(realtime.Realtime):
                     result = await output[1].receive()
                     if result.value and result.value.bytes_:
                         try:
+                            logger.info("received...")
                             response_data = result.value.bytes_.decode('utf-8')
                             json_data = json.loads(response_data)
 
@@ -382,18 +384,21 @@ class Realtime(realtime.Realtime):
                                     logger.info("Completion start from Bedrock", json_data['event']['completionStart'])
                                 elif 'audioOutput' in json_data['event']:
                                     logger.info("Audio output from Bedrock")
-                                    audio_content = json_data['event']['audioOutput']['content']
-                                    audio_bytes = base64.b64decode(audio_content)
-                                    #await self.audio_output_queue.put(audio_bytes)
+                                    try:
+                                        audio_content = json_data['event']['audioOutput']['content']
+                                        audio_bytes = base64.b64decode(audio_content)
+                                        #await self.audio_output_queue.put(audio_bytes)
 
-                                    audio_event = RealtimeAudioOutputEvent(
-                                        plugin_name="gemini",
-                                        audio_data=audio_content,
-                                        sample_rate=24000
-                                    )
-                                    self.events.send(audio_event)
+                                        audio_event = RealtimeAudioOutputEvent(
+                                            plugin_name="gemini",
+                                            audio_data=audio_bytes,
+                                            sample_rate=24000
+                                        )
+                                        self.events.send(audio_event)
 
-                                    await self.output_track.write(audio_content)
+                                        await self.output_track.write(audio_bytes)
+                                    except Exception as e:
+                                        import pdb; pdb.set_trace()
 
                                 elif 'toolUse' in json_data['event']:
                                     logger.info(f"Tool use from Bedrock: {json_data['event']['toolUse']}")

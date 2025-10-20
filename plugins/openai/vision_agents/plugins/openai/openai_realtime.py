@@ -125,12 +125,9 @@ class Realtime(realtime.Realtime):
         """
         await self.rtc.request_session_info()
 
-    async def _close_impl(self):
-        """Close the OpenAI Realtime session.
-
-        Delegates cleanup to the RTC manager. Called by the base class close() method.
-        """
+    async def close(self):
         await self.rtc.close()
+
 
     async def _handle_openai_event(self, event: dict) -> None:
         """Process events received from the OpenAI Realtime API.

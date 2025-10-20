@@ -4,7 +4,7 @@ Here is a minimal example of developing a new LLM
 
 ```python
 from vision_agents.core.llm.llm import LLM, LLMResponseEvent
-from vision_agents.core.events import LLMResponseChunkEvent
+from vision_agents.core.llm.events import LLMResponseCompletedEvent, LLMResponseChunkEvent
 from vision_agents.core.processors import Processor
 
 class MyLLM(LLM):
@@ -12,7 +12,7 @@ class MyLLM(LLM):
         # it should be possible to pass the client (makes it easier for users to customize things)
         # settings that are common to change, like model should be specified as well
         super().__init__()
-        self.model=model
+        self.model = model
         self.client = client
         
         
@@ -29,6 +29,7 @@ class MyLLM(LLM):
         response_iterator = await self.client.mynativemethod(self, *args, **kwargs)
         
         # while receiving streaming do this
+        total_text = ""
         for chunk in response_iterator:
             self.events.send(LLMResponseChunkEvent(
                     plugin_name="gemini",

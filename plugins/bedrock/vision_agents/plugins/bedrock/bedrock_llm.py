@@ -7,11 +7,11 @@ from botocore.exceptions import ClientError
 from vision_agents.core.llm.llm import LLM, LLMResponseEvent
 from vision_agents.core.llm.llm_types import ToolSchema, NormalizedToolCallItem
 
-from getstream.video.rtc.pb.stream.video.sfu.models.models_pb2 import Participant
 
 from vision_agents.core.llm.events import LLMResponseChunkEvent, LLMResponseCompletedEvent
 from vision_agents.core.processors import Processor
 from . import events
+from ...core.edge.types import Participant
 
 if TYPE_CHECKING:
     from vision_agents.core.agents.conversation import Message

@@ -5,7 +5,6 @@ import logging
 import uuid
 from typing import Optional, List, Dict, Any
 from getstream.video.rtc.audio_track import AudioStreamTrack
-from getstream.video.rtc.track_util import PcmData
 from hatch.cli import self
 
 from vision_agents.core.llm import realtime
@@ -18,6 +17,7 @@ from vision_agents.core.utils.video_forwarder import VideoForwarder
 from . import events
 from vision_agents.core.processors import Processor
 from vision_agents.core.edge.types import Participant
+from vision_agents.core.edge.types import PcmData
 from ...core.llm.events import RealtimeAudioOutputEvent
 
 logger = logging.getLogger(__name__)
@@ -163,14 +163,15 @@ class Realtime(realtime.Realtime):
             self.logger.warning("realtime is not active. can't call simple_audio_response")
 
         logger.info("sar")
-        #self.logger.info("Simple audio response for model %s", self.model)
+        # Resample from 48kHz to 24kHz if needed
+        pcm = pcm.resample(24000)
+        
         content_name = str(uuid.uuid4())
-        audio_bytes = pcm
 
         await self.audio_content_start(content_name)
-        self._emit_audio_input_event(audio_bytes, sample_rate=pcm.sample_rate)
+        self._emit_audio_input_event(pcm.samples, sample_rate=pcm.sample_rate)
         # Convert PcmData to base64 encoded bytes
-        audio_base64 = base64.b64encode(audio_bytes.samples).decode('utf-8')
+        audio_base64 = base64.b64encode(pcm.samples).decode('utf-8')
         await self.audio_input(content_name, audio_base64)
 
         await self.content_end(content_name)
@@ -221,7 +222,7 @@ class Realtime(realtime.Realtime):
                 "role": role,
                 "audioInputConfiguration": {
                     "mediaType": "audio/lpcm",
-                    "sampleRateHertz": 16000,
+                    "sampleRateHertz": 24000,
                     "sampleSizeBits": 16,
                     "channelCount": 1,
                     "audioType": "SPEECH",
@@ -345,11 +346,14 @@ class Realtime(realtime.Realtime):
         if self._stream_task:
             self._stream_task.cancel()
 
+        self.connected = False
+
 
     async def _handle_events(self):
         """Process incoming responses from Bedrock."""
         try:
-            while self.connected:
+            while True:
+                logger.info("iter")
                 try:
                     output = await self.stream.await_output()
                     result = await output[1].receive()

@@ -261,7 +261,7 @@ class Realtime(realtime.Realtime):
         should_reconnect = False
         return should_reconnect
 
-    async def _close_impl(self):
+    async def close(self):
         self.connected = False
 
         if hasattr(self, '_receive_task') and self._receive_task:

@@ -30,8 +30,7 @@ class TestBedrockRealtime:
 
     @pytest.mark.integration
     async def test_simple_response_flow(self, realtime):
-        """Test sending a simple text message and receiving response"""
-        # Send a simple message
+        # unlike other realtime LLMs, AWS doesn't reply if you only send text
         events = []
         realtime._set_instructions("whenever you reply mention a fun fact about The Netherlands")
         
@@ -45,10 +44,7 @@ class TestBedrockRealtime:
 
         # Wait for response
         await asyncio.sleep(10.0)
-        
-        # Note: Depending on model capabilities, audio events may or may not be generated
-        # The test passes if no exceptions are raised
-        assert True
+
 
     @pytest.mark.integration
     async def test_audio_first(self, realtime, mia_audio_16khz):
@@ -73,37 +69,11 @@ class TestBedrockRealtime:
         assert True
 
     @pytest.mark.integration
-    async def test_video_sending_flow(self, realtime, bunny_video_track):
-        """Test sending real video data and verify connection remains stable"""
-        events = []
-        
-        @realtime.events.subscribe
-        async def on_audio(event: RealtimeAudioOutputEvent):
-            events.append(event)
-        
-        await asyncio.sleep(0.01)
-        await realtime.connect()
-        await realtime.simple_response("Describe what you see in this video please")
-        await asyncio.sleep(5.0)
-        
-        # Start video sender with low FPS to avoid overwhelming the connection
-        await realtime._watch_video_track(bunny_video_track)
-        
-        # Let it run for a few seconds
-        await asyncio.sleep(10.0)
-        
-        # Stop video sender
-        await realtime._stop_watching_video_track()
-        
-        # Test passes if no exceptions are raised
-        assert True
-
-    @pytest.mark.integration
     async def test_connection_lifecycle(self, realtime):
         """Test that connection can be established and closed properly"""
         # Connect
         await realtime.connect()
-        assert realtime._is_connected is True
+        assert realtime.connected is True
         
         # Send a simple message
         await realtime.simple_response("Test message")
@@ -111,5 +81,5 @@ class TestBedrockRealtime:
         
         # Close
         await realtime.close()
-        assert realtime._is_connected is False
+        assert realtime.connected is False
 

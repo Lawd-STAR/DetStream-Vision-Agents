@@ -11,7 +11,7 @@ from vision_agents.core.llm.llm_types import ToolSchema, NormalizedToolCallItem
 from vision_agents.core.llm.events import LLMResponseChunkEvent, LLMResponseCompletedEvent
 from vision_agents.core.processors import Processor
 from . import events
-from ...core.edge.types import Participant
+from vision_agents.core.edge.types import Participant
 
 if TYPE_CHECKING:
     from vision_agents.core.agents.conversation import Message

@@ -3,7 +3,6 @@ import logging
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from getstream import AsyncStream
 
 from vision_agents.core import User
 from vision_agents.core.agents import Agent

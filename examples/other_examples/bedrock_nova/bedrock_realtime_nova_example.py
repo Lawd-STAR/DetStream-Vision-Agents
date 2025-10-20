@@ -3,7 +3,6 @@ import logging
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from getstream import AsyncStream
 
 from vision_agents.core import User
 from vision_agents.core.agents import Agent
@@ -30,6 +29,7 @@ async def start_agent() -> None:
     with await agent.join(call):
         await asyncio.sleep(5)
         await agent.llm.simple_response(text="Say hi and start the story")
+        await agent.finish()
 
 
 if __name__ == "__main__":

@@ -29,10 +29,7 @@ DEFAULT_SAMPLE_RATE = 16000
 
 """
 TODO:
-
-- Fix audio input event
-- Cleanup process event loop
-- Cleanup function calling
+- Implement & cleanup function calling
 - Cleanup chat integration
 """
 
@@ -165,6 +162,7 @@ class Realtime(realtime.Realtime):
         if not self.connected:
             self.logger.warning("realtime is not active. can't call simple_audio_response")
 
+        #self.logger.info("Simple audio response for model %s", self.model)
         content_name = str(uuid.uuid4())
         audio_bytes = pcm
 
@@ -383,6 +381,7 @@ class Realtime(realtime.Realtime):
                                 elif 'completionStart' in json_data['event']:
                                     logger.info("Completion start from Bedrock", json_data['event']['completionStart'])
                                 elif 'audioOutput' in json_data['event']:
+                                    logger.info("Audio output from Bedrock")
                                     audio_content = json_data['event']['audioOutput']['content']
                                     audio_bytes = base64.b64decode(audio_content)
                                     #await self.audio_output_queue.put(audio_bytes)

@@ -6,6 +6,8 @@ import uuid
 from typing import Optional, List, Dict, Any
 from getstream.video.rtc.audio_track import AudioStreamTrack
 from getstream.video.rtc.track_util import PcmData
+from hatch.cli import self
+
 from vision_agents.core.llm import realtime
 from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
 from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
@@ -93,7 +95,7 @@ class Realtime(realtime.Realtime):
         super().__init__(**kwargs)
         self.model = model
         self.region_name = region_name
-        self.sample_rate = 16000
+        self.sample_rate = 24000
         self.voice_id = voice_id
 
         # Initialize Bedrock Runtime client with SDK
@@ -107,7 +109,7 @@ class Realtime(realtime.Realtime):
 
         # Audio output track - Bedrock typically outputs at 16kHz
         self.output_track = AudioStreamTrack(
-            framerate=self.sample_rate, stereo=False, format="s16"
+            framerate=24000, stereo=False, format="s16"
         )
 
         self._video_forwarder: Optional[VideoForwarder] = None
@@ -146,7 +148,7 @@ class Realtime(realtime.Realtime):
         self.connected = True
 
         # Start listener task
-        self.event_handler = asyncio.create_task(self._handle_events())
+        self._stream_task = asyncio.create_task(self._handle_events())
 
         # send start and prompt event
         await self.start_session()
@@ -319,7 +321,7 @@ class Realtime(realtime.Realtime):
         )
         await self.stream.input_stream.send(event)
 
-    async def _close_impl(self):
+    async def close(self):
         if not self.connected:
             return
 
@@ -341,8 +343,8 @@ class Realtime(realtime.Realtime):
 
         await self.stream.input_stream.close()
 
-
-
+        if self._stream_task:
+            self._stream_task.cancel()
 
 
     async def _handle_events(self):
@@ -354,16 +356,14 @@ class Realtime(realtime.Realtime):
                     result = await output[1].receive()
                     if result.value and result.value.bytes_:
                         try:
-                            logger.info("attempt")
                             response_data = result.value.bytes_.decode('utf-8')
-                            logger.info(f"Response from Bedrock: {response_data}")
-
                             json_data = json.loads(response_data)
 
                             # Handle different response types
                             if 'event' in json_data:
                                 if 'contentStart' in json_data['event']:
                                     content_start = json_data['event']['contentStart']
+                                    logger.info(f"Content start from Bedrock: {content_start}")
                                     # set role
                                     self.role = content_start['role']
                                     # Check for speculative content
@@ -379,19 +379,9 @@ class Realtime(realtime.Realtime):
                                 elif 'textOutput' in json_data['event']:
                                     text_content = json_data['event']['textOutput']['content']
                                     role = json_data['event']['textOutput']['role']
-                                    # Check if there is a barge-in
-                                    if '{ "interrupted" : true }' in text_content:
-                                        self.barge_in = True
-
-                                    if not self.display_assistant_text:
-                                        #TODOself.chat_history.add_message(role, text_content)
-                                        pass
-
-                                    if (self.role == "ASSISTANT" and self.display_assistant_text):
-                                        print(f"Assistant: {text_content}")
-                                    elif (self.role == "USER"):
-                                        print(f"User: {text_content}")
-
+                                    logger.info(f"Text output from Bedrock: {text_content}")
+                                elif 'completionStart' in json_data['event']:
+                                    logger.info("Completion start from Bedrock", json_data['event']['completionStart'])
                                 elif 'audioOutput' in json_data['event']:
                                     audio_content = json_data['event']['audioOutput']['content']
                                     audio_bytes = base64.b64decode(audio_content)
@@ -407,6 +397,7 @@ class Realtime(realtime.Realtime):
                                     await self.output_track.write(audio_content)
 
                                 elif 'toolUse' in json_data['event']:
+                                    logger.info(f"Tool use from Bedrock: {json_data['event']['toolUse']}")
                                     self.toolUseContent = json_data['event']['toolUse']
                                     self.toolName = json_data['event']['toolUse']['toolName']
                                     self.toolUseId = json_data['event']['toolUse']['toolUseId']
@@ -418,6 +409,7 @@ class Realtime(realtime.Realtime):
                                 elif 'contentEnd' in json_data['event'] and json_data['event'].get('contentEnd',
                                                                                                    {}).get(
                                         'type') == 'TOOL':
+                                    logger.info(f"Tool end from Bedrock: {json_data['event']['contentEnd']}")
                                     toolResult = await self.processToolUse(self.toolName, self.toolUseContent)
                                     # Update tool use in history with result
                                     self.chat_history.add_tool_result(self.toolUseId, toolResult)
@@ -425,10 +417,17 @@ class Realtime(realtime.Realtime):
                                     await self.send_tool_start_event(toolContent)
                                     await self.send_tool_result_event(toolContent, toolResult)
                                     await self.send_tool_content_end_event(toolContent)
+                                elif 'contentEnd' in json_data['event']:
+                                    logger.info(f"Content end from Bedrock: {json_data['event']['contentEnd']}")
 
                                 elif 'completionEnd' in json_data['event']:
+                                    logger.info(f"Completion end from Bedrock: {json_data['event']['completionEnd']}")
                                     # Handle end of conversation, no more response will be generated
-                                    print("End of response sequence")
+                                elif "usageEvent" in json_data['event']:
+                                    #logger.info(f"Usage event from Bedrock: {json_data['event']['usageEvent']}")
+                                    pass
+                                else:
+                                    logger.warning(f"Unhandled event: {json_data['event']}")
 
                             # Put the response in the output queue for other components
                             #await self.output_queue.put(json_data)

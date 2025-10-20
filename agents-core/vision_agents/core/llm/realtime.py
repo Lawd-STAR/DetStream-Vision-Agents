@@ -45,21 +45,15 @@ class Realtime(LLM, abc.ABC):
         fps: int = 1, # the number of video frames per second to send (for implementations that support setting fps)
     ):
         super().__init__()
-        self._is_connected = False
+        self.connected = False
 
         self.provider_name = "realtime_base"
         self.session_id = str(uuid.uuid4())
         self.fps = fps
         # The most common style output track (webrtc)
-        # TODO: do we like the output track here, or do we want to do an event, and have the agent manage the output track
         self.output_track: AudioStreamTrack = AudioStreamTrack(
             framerate=48000, stereo=True, format="s16"
         )
-
-    @property
-    def is_connected(self) -> bool:
-        """Return True if the realtime session is currently active."""
-        return self._is_connected
 
     @abc.abstractmethod
     async def connect(self): ...
@@ -78,7 +72,7 @@ class Realtime(LLM, abc.ABC):
 
     def _emit_connected_event(self, session_config=None, capabilities=None):
         """Emit a structured connected event."""
-        self._is_connected = True
+        self.connected = True
         # Mark ready when connected if provider uses base emitter
         try:
             self._ready_event.set()  # type: ignore[attr-defined]
@@ -94,7 +88,7 @@ class Realtime(LLM, abc.ABC):
 
     def _emit_disconnected_event(self, reason=None, was_clean=True):
         """Emit a structured disconnected event."""
-        self._is_connected = False
+        self.connected = False
         event = events.RealtimeDisconnectedEvent(
             session_id=self.session_id,
             plugin_name=self.provider_name,
@@ -199,19 +193,6 @@ class Realtime(LLM, abc.ABC):
         )
         self.events.send(event)
 
-    async def close(self):
-        """Close the Realtime service and release any resources."""
-        if self._is_connected:
-            await self._close_impl()
-            self._emit_disconnected_event("service_closed", True)
-
-        close_event = PluginClosedEvent(
-            session_id=self.session_id,
-            plugin_name=self.provider_name,
-            cleanup_successful=True,
-        )
-        self.events.send(close_event)
-
     @abc.abstractmethod
-    async def _close_impl(self): ...
-
+    async def close(self):
+        raise NotImplementedError("llm.close isn't implemented")

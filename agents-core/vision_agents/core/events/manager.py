@@ -511,7 +511,8 @@ class EventManager:
         for handler in self._handlers.get(event.type, []):
             module_name = getattr(handler, '__module__', 'unknown')
             if event.type not in self._silent_events:
-                logger.info(f"Called handler {handler.__name__} from {module_name} for event {event.type}")
+                pass
+                #logger.info(f"Called handler {handler.__name__} from {module_name} for event {event.type}")
 
             loop = asyncio.get_running_loop()
             handler_task = loop.create_task(self._run_handler(handler, event))

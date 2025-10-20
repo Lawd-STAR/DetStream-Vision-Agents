@@ -51,7 +51,7 @@ class TestBedrockRealtime:
         assert True
 
     @pytest.mark.integration
-    async def test_audio_sending_flow_start(self, realtime, mia_audio_16khz):
+    async def test_audio_first(self, realtime, mia_audio_16khz):
         """Test sending real audio data and verify connection remains stable"""
         events = []
         

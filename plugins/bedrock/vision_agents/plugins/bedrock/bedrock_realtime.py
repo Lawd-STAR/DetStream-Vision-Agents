@@ -237,7 +237,7 @@ class Realtime(realtime.Realtime):
           "event": {
             "sessionStart": {
               "inferenceConfiguration": {
-                "maxTokens": 1024,
+                "maxTokens": 10240, # TODO: make configurable in init?
                 "topP": 0.9,
                 "temperature": 0.7
               }

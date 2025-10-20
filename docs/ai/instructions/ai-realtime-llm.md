@@ -37,7 +37,7 @@ class MyRealtime(realtime.Realtime):
         # TODO document this
         pass
     
-    async def _close_impl(self):
+    async def close(self):
         pass
         
     # native method wrapped. wrap the native method, every llm has its own name for this

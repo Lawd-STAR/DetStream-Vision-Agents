@@ -10,6 +10,10 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  UV_LINK_MODE: copy
+
 jobs:
   lint:
     name: Ruff & mypy

@@ -39,7 +39,8 @@ class TestBedrockLLM:
         )
         if not os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
             token = os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
-            raise Exception(f"Please set AWS_BEARER_TOKEN_BEDROCK {len(token)}, {type(token)}")
+            other = os.environ.get("ANTHROPIC_API_KEY")
+            raise Exception(f"Please set AWS_BEARER_TOKEN_BEDROCK {len(token)}, {type(token)}. {len(other)}, {type(other)}")
 
         llm._conversation = InMemoryConversation("be friendly", [])
         return llm

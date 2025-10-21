@@ -78,4 +78,4 @@ class MyLLM(LLM):
 If you need more examples look in
 
 - gemini_llm.py
-- bedrock_llm.py
+- aws_llm.py (AWS Bedrock implementation)

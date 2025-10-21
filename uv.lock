@@ -12,7 +12,7 @@ resolution-markers = [
 members = [
     "vision-agents",
     "vision-agents-plugins-anthropic",
-    "vision-agents-plugins-bedrock",
+    "vision-agents-plugins-aws",
     "vision-agents-plugins-cartesia",
     "vision-agents-plugins-deepgram",
     "vision-agents-plugins-elevenlabs",
@@ -4918,8 +4918,8 @@ dev = [
 ]
 
 [[package]]
-name = "vision-agents-plugins-bedrock"
-source = { editable = "plugins/bedrock" }
+name = "vision-agents-plugins-aws"
+source = { editable = "plugins/aws" }
 dependencies = [
     { name = "aws-sdk-bedrock-runtime" },
     { name = "boto3" },

@@ -160,7 +160,9 @@ class Realtime(realtime.Realtime):
             raise Exception("AWS Bedrock requires system instructions before sending regular user input")
         await self.content_input(system_instructions, "SYSTEM")
 
-    async def simple_audio_response(self, pcm: PcmData):
+    async def simple_audio_response(
+        self, pcm: PcmData, participant: Optional[Participant] = None
+    ):
         """Send audio data to the model for processing."""
         if not self.connected:
             self.logger.warning("realtime is not active. can't call simple_audio_response")

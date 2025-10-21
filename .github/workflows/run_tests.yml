@@ -13,7 +13,7 @@ concurrency:
 jobs:
   lint:
     name: Ruff & mypy
-    runs-on: ubuntu-latest
+    runs-on: build
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -27,7 +27,7 @@ jobs:
 
   test:
     name: Test "${{ inputs.marker }}"
-    runs-on: ubuntu-latest
+    runs-on: build
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}

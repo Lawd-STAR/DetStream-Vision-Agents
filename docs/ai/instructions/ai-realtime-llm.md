@@ -1,13 +1,14 @@
-# LLM Plugin Development
+# Realtime LLM Plugin Development
 
-Here is a minimal example of developing a new LLM
+Here is a minimal example of developing a new Realtime LLM.
 
 ```python
 from vision_agents.core.llm.llm import LLM, LLMResponseEvent
 from vision_agents.core.llm.events import LLMResponseCompletedEvent, LLMResponseChunkEvent
 from vision_agents.core.processors import Processor
+from vision_agents.core.llm import realtime
 
-class MyLLM(LLM):
+class MyRealtime(realtime.Realtime):
     def __init__(self, model: str, client: Optional[ClientType]):
         # it should be possible to pass the client (makes it easier for users to customize things)
         # settings that are common to change, like model should be specified as well
@@ -15,6 +16,29 @@ class MyLLM(LLM):
         self.model = model
         self.client = client
         
+    async def connect(self):
+        # create the websocket or webrtc connection to the realtime LLM
+        pass
+    
+    async def _handle_events(self):
+        # handle the events from the connect method
+        
+        # when receiving audio do this
+        audio_event = RealtimeAudioOutputEvent(
+            plugin_name="gemini",
+            audio_data=audio_content,
+            sample_rate=24000
+        )
+        self.events.send(audio_event)
+
+        await self.output_track.write(audio_content)
+        
+        # for transcriptions...
+        # TODO document this
+        pass
+    
+    async def close(self):
+        pass
         
     # native method wrapped. wrap the native method, every llm has its own name for this
     # openai calls it create response, anthropic create message. so the name depends on your llm
@@ -59,9 +83,8 @@ class MyLLM(LLM):
         # be sure to use the streaming version
         self.mynativemethod(...)
     
-    @staticmethod
-    def _normalize_message(my_input) -> List["Message"]:
-        # convert the message to a list of messages so our conversation storage gets it
+    async def simple_audio_response(self, pcm: PcmData):
+        # respond to this audio
         pass
 
 ```

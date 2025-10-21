@@ -78,6 +78,17 @@ def mia_audio_16khz():
 
 
 @pytest.fixture
+def golf_swing_image():
+    """Load golf_swing.png image and return as bytes."""
+    image_file_path = os.path.join(get_assets_dir(), "golf_swing.png")
+    
+    with open(image_file_path, "rb") as f:
+        image_bytes = f.read()
+    
+    return image_bytes
+
+
+@pytest.fixture
 async def bunny_video_track():
     """Create RealVideoTrack from video file."""
     from aiortc import VideoStreamTrack

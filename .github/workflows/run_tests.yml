@@ -40,6 +40,7 @@ jobs:
       STREAM_API_KEY: ${{ secrets.STREAM_API_KEY }}
       STREAM_API_SECRET: ${{ secrets.STREAM_API_SECRET }}
       XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
     timeout-minutes: 30
     steps:
       - name: Checkout

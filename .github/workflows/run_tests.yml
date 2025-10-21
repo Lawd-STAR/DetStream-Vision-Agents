@@ -24,6 +24,9 @@ jobs:
         run: uv run mypy --install-types --non-interactive agents-core/vision_agents
       - name: Mypy plugins
         run: uv run mypy --install-types --non-interactive --exclude 'plugins/.*/tests/.*' plugins
+      - name: Show environment name
+        run: |
+          echo "Environment: ${{ job.environment }}"
 
   test:
     name: Test "${{ inputs.marker }}"

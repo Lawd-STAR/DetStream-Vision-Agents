@@ -41,3 +41,19 @@ agent = Agent(
 )
 ```
 
+## Running the examples
+
+Create a `.env` file, or cp .env.example to .env and fill in
+
+```
+STREAM_API_KEY=your_stream_api_key_here
+STREAM_API_SECRET=your_stream_api_secret_here
+
+AWS_BEARER_TOKEN_BEDROCK=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+
+FAL_KEY=
+CARTESIA_API_KEY=
+DEEPGRAM_API_KEY=
+```

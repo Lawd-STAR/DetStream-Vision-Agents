@@ -1,4 +1,5 @@
 """Tests for AWS plugin."""
+
 import os
 
 import pytest
@@ -18,29 +19,31 @@ class TestBedrockLLM:
     def assert_response_successful(self, response):
         """
         Utility method to verify a response is successful.
-        
+
         A successful response has:
         - response.text is set (not None and not empty)
         - response.exception is None
-        
+
         Args:
             response: LLMResponseEvent to check
         """
         assert response.text is not None, "Response text should not be None"
         assert len(response.text) > 0, "Response text should not be empty"
-        assert not hasattr(response, 'exception') or response.exception is None, f"Response should not have an exception, got: {getattr(response, 'exception', None)}"
+        assert not hasattr(response, "exception") or response.exception is None, (
+            f"Response should not have an exception, got: {getattr(response, 'exception', None)}"
+        )
 
     @pytest.fixture
     async def llm(self) -> BedrockLLM:
         """Test BedrockLLM initialization with a provided client."""
-        llm = BedrockLLM(
-            model="qwen.qwen3-32b-v1:0",
-            region_name="us-east-1"
-        )
+        llm = BedrockLLM(model="qwen.qwen3-32b-v1:0", region_name="us-east-1")
         if not os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
+            print(len(os.environ.get("_BEARER_TOKEN_BEDROCK")))
             token = os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
             other = os.environ.get("ANTHROPIC_API_KEY")
-            raise Exception(f"Please set AWS_BEARER_TOKEN_BEDROCK {len(token)}, {type(token)}. {len(other)}, {type(other)}")
+            raise Exception(
+                f"Please set AWS_BEARER_TOKEN_BEDROCK {len(token)}, {type(token)}. {len(other)}, {type(other)}"
+            )
 
         llm._conversation = InMemoryConversation("be friendly", [])
         return llm
@@ -80,14 +83,16 @@ class TestBedrockLLM:
     @pytest.mark.integration
     async def test_stream(self, llm: BedrockLLM):
         streamingWorks = False
-        
+
         @llm.events.subscribe
         async def passed(event: LLMResponseChunkEvent):
             nonlocal streamingWorks
             streamingWorks = True
 
         await llm.converse_stream(
-            messages=[{"role": "user", "content": [{"text": "Explain magma to a 5 year old"}]}]
+            messages=[
+                {"role": "user", "content": [{"text": "Explain magma to a 5 year old"}]}
+            ]
         )
         # Wait for all events in queue to be processed
         await llm.events.wait()
@@ -108,11 +113,16 @@ class TestBedrockLLM:
     @pytest.mark.integration
     async def test_native_memory(self, llm: BedrockLLM):
         await llm.converse(
-            messages=[{"role": "user", "content": [{"text": "There are 2 dogs in the room"}]}],
+            messages=[
+                {"role": "user", "content": [{"text": "There are 2 dogs in the room"}]}
+            ],
         )
         response = await llm.converse(
             messages=[
-                {"role": "user", "content": [{"text": "How many paws are there in the room?"}]}
+                {
+                    "role": "user",
+                    "content": [{"text": "How many paws are there in the room?"}],
+                }
             ],
         )
         assert "8" in response.text or "eight" in response.text
@@ -121,28 +131,20 @@ class TestBedrockLLM:
     async def test_image_description(self, golf_swing_image):
         # Use a vision-capable model (Claude 3 Haiku supports images and is widely available)
         vision_llm = BedrockLLM(
-            model="anthropic.claude-3-haiku-20240307-v1:0",
-            region_name="us-east-1"
+            model="anthropic.claude-3-haiku-20240307-v1:0", region_name="us-east-1"
         )
-        
+
         image_bytes = golf_swing_image
         response = await vision_llm.converse(
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "image": {
-                            "format": "png",
-                            "source": {
-                                "bytes": image_bytes
-                            }
-                        }
-                    },
-                    {
-                        "text": "What sport do you see in this image?"
-                    }
-                ]
-            }]
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"image": {"format": "png", "source": {"bytes": image_bytes}}},
+                        {"text": "What sport do you see in this image?"},
+                    ],
+                }
+            ]
         )
 
         self.assert_response_successful(response)
@@ -159,9 +161,6 @@ class TestBedrockLLM:
         response = await llm.simple_response(
             text="Which country is rainy, protected from water with dikes and below sea level?",
         )
-        
+
         self.assert_response_successful(response)
         assert "nl" in response.text.lower()
-
-
-

@@ -38,7 +38,8 @@ class TestBedrockLLM:
             region_name="us-east-1"
         )
         if not os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
-            raise Exception("Please set AWS_BEARER_TOKEN_BEDROCK")
+            token = os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
+            raise Exception(f"Please set AWS_BEARER_TOKEN_BEDROCK {len(token)}, {type(token)}")
 
         llm._conversation = InMemoryConversation("be friendly", [])
         return llm

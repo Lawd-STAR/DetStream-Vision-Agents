@@ -56,15 +56,11 @@ async def start_agent():
         model="gemini-2.5-flash-native-audio-preview-09-2025", api_key=google_api_key
     )
 
-    # Create real edge transport and agent user
-    edge = getstream.Edge()
-    agent_user = User(name="GitHub AI Assistant", id="github-agent")
-
     # Create agent with GitHub MCP server and Gemini Realtime LLM
     agent = Agent(
-        edge=edge,
+        edge=getstream.Edge(),
         llm=llm,
-        agent_user=agent_user,
+        agent_user=User(name="GitHub AI Assistant", id="github-agent"),
         instructions="You are a helpful AI assistant with access to GitHub via MCP server. You can help with GitHub operations like creating issues, managing pull requests, searching repositories, and more. Keep responses conversational and helpful. When you need to perform GitHub operations, use the available MCP tools.",
         processors=[],
         mcp_servers=[github_server],
@@ -74,9 +70,6 @@ async def start_agent():
     logger.info(f"GitHub server: {github_server}")
 
     try:
-        # Create the agent user
-        await agent.create_user()
-
         # Set up event handler for when participants join
         @agent.subscribe
         async def on_participant_joined(event: CallSessionParticipantJoinedEvent):

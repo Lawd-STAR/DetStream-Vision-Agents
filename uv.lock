@@ -1211,7 +1211,7 @@ wheels = [
 
 [[package]]
 name = "getstream"
-version = "2.5.3"
+version = "2.5.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dataclasses-json" },
@@ -1225,7 +1225,7 @@ dependencies = [
     { name = "python-dateutil" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/25/771d7ec27ee9ce3b6183930ac25879210c288e181d4efe4c7ecd441e6083/getstream-2.5.3-py3-none-any.whl", hash = "sha256:3b67c23f76822341c6fa217d47108896e5884a8eb961b4fe67faabc2c28966cd", size = 231858, upload-time = "2025-10-08T16:13:51.564Z" },
+    { url = "https://files.pythonhosted.org/packages/88/c6/e1226dbfa237f061e6ef729113d81ef1fe23a662a9a8d93504689327618b/getstream-2.5.6-py3-none-any.whl", hash = "sha256:303a0ec7589cc8ae2eddd34b999cd9d97c568de217b982f2d0ea4b978a433ea5", size = 232577, upload-time = "2025-10-16T10:46:52.904Z" },
 ]
 
 [package.optional-dependencies]
@@ -2672,7 +2672,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "2.2.0"
+version = "2.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -2684,9 +2684,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b8/b1/8201e321a7d64a25c6f5a560320272d8be70547add40311fceb916518632/openai-2.2.0.tar.gz", hash = "sha256:bc49d077a8bf0e370eec4d038bc05e232c20855a19df0b58e5b3e5a8da7d33e0", size = 588512, upload-time = "2025-10-06T18:08:13.665Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/c7/e42bcd89dfd47fec8a30b9e20f93e512efdbfbb3391b05bbb79a2fb295fa/openai-2.6.0.tar.gz", hash = "sha256:f119faf7fc07d7e558c1e7c32c873e241439b01bd7480418234291ee8c8f4b9d", size = 592904, upload-time = "2025-10-20T17:17:24.588Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cb/92/6aeef1836e66dfec7f7f160a4f06d7041be7f6ccfc47a2f0f5738b332245/openai-2.2.0-py3-none-any.whl", hash = "sha256:d222e63436e33f3134a3d7ce490dc2d2f146fa98036eb65cc225df3ce163916f", size = 998972, upload-time = "2025-10-06T18:08:11.775Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/0a/58e9dcd34abe273eaeac3807a8483073767b5609d01bb78ea2f048e515a0/openai-2.6.0-py3-none-any.whl", hash = "sha256:f33fa12070fe347b5787a7861c8dd397786a4a17e1c3186e239338dac7e2e743", size = 1005403, upload-time = "2025-10-20T17:17:22.091Z" },
 ]
 
 [package.optional-dependencies]
@@ -4850,7 +4850,7 @@ xai = [
 [package.metadata]
 requires-dist = [
     { name = "click", marker = "extra == 'dev'" },
-    { name = "getstream", extras = ["telemetry", "webrtc"], specifier = ">=2.5.3" },
+    { name = "getstream", extras = ["telemetry", "webrtc"], specifier = ">=2.5.5" },
     { name = "mcp", specifier = ">=1.16.0" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "numpy", specifier = ">=1.24.0" },
@@ -4961,7 +4961,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cartesia", specifier = ">=2.0.5" },
+    { name = "cartesia", specifier = ">=2.0.9" },
     { name = "vision-agents", editable = "agents-core" },
 ]
 
@@ -4986,7 +4986,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "scipy" },
     { name = "soundfile" },
-    { name = "torchaudio" },
+    { name = "torchvision" },
 ]
 
 [package.metadata]
@@ -5002,7 +5002,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "scipy", specifier = ">=1.15.3,<1.16" },
     { name = "soundfile", specifier = ">=0.13.1" },
-    { name = "torchaudio", specifier = ">=2.7.1" },
+    { name = "torchvision", specifier = ">=0.20.0" },
 ]
 
 [[package]]
@@ -5189,7 +5189,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "openai", extras = ["realtime"], specifier = ">=2.2.0" },
+    { name = "openai", extras = ["realtime"], specifier = ">=2.5.0" },
     { name = "vision-agents", editable = "agents-core" },
 ]
 
@@ -5215,7 +5215,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "scipy" },
     { name = "soundfile" },
-    { name = "torchaudio" },
+    { name = "torchvision" },
 ]
 
 [package.metadata]
@@ -5232,7 +5232,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "scipy", specifier = ">=1.15.3,<1.16" },
     { name = "soundfile", specifier = ">=0.13.1" },
-    { name = "torchaudio", specifier = ">=2.7.1" },
+    { name = "torchvision", specifier = ">=0.20.0" },
 ]
 
 [[package]]

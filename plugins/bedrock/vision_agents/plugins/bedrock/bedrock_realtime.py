@@ -52,7 +52,12 @@ class Realtime(realtime.Realtime):
     Input event docs: https://docs.aws.amazon.com/nova/latest/userguide/input-events.html
     Available voices are documented here:
     https://docs.aws.amazon.com/nova/latest/userguide/available-voices.html
-    
+
+    Resumption example:
+    https://github.com/aws-samples/amazon-nova-samples/tree/main/speech-to-speech/repeatable-patterns/resume-conversation
+
+
+
     Examples:
     
         from vision_agents.plugins import bedrock
@@ -160,7 +165,6 @@ class Realtime(realtime.Realtime):
         if not self.connected:
             self.logger.warning("realtime is not active. can't call simple_audio_response")
 
-        logger.info("sar")
         # Resample from 48kHz to 24kHz if needed
         pcm = pcm.resample(24000)
         
@@ -268,6 +272,7 @@ class Realtime(realtime.Realtime):
             }
           }
         }
+        # TODO: tool support
         await self.send_event(event)
 
 
@@ -351,13 +356,11 @@ class Realtime(realtime.Realtime):
         """Process incoming responses from Bedrock."""
         try:
             while True:
-                logger.info("iter")
                 try:
                     output = await self.stream.await_output()
                     result = await output[1].receive()
                     if result.value and result.value.bytes_:
                         try:
-                            logger.info("received...")
                             response_data = result.value.bytes_.decode('utf-8')
                             json_data = json.loads(response_data)
 
@@ -385,7 +388,6 @@ class Realtime(realtime.Realtime):
                                 elif 'completionStart' in json_data['event']:
                                     logger.info("Completion start from Bedrock", json_data['event']['completionStart'])
                                 elif 'audioOutput' in json_data['event']:
-                                    logger.info("Audio output from Bedrock")
                                     audio_content = json_data['event']['audioOutput']['content']
                                     audio_bytes = base64.b64decode(audio_content)
                                     #await self.audio_output_queue.put(audio_bytes)
@@ -422,7 +424,12 @@ class Realtime(realtime.Realtime):
                                     await self.send_tool_result_event(toolContent, toolResult)
                                     await self.send_tool_content_end_event(toolContent)
                                 elif 'contentEnd' in json_data['event']:
-                                    logger.info(f"Content end from Bedrock: {json_data['event']['contentEnd']}")
+
+
+                                    stopReason = json_data['event']['contentEnd']['stopReason']
+                                    if stopReason == "INTERRUPTED":
+                                        logger.info("TODO: should flush audio buffer")
+                                    logger.info(f"Content end from Bedrock {stopReason}: {json_data['event']['contentEnd']}")
 
                                 elif 'completionEnd' in json_data['event']:
                                     logger.info(f"Completion end from Bedrock: {json_data['event']['completionEnd']}")

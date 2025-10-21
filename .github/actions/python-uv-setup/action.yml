@@ -25,6 +25,12 @@ runs:
         cache-dependency-glob: |
           **/pyproject.toml
           **/uv.lock
+    - name: Log cache status
+      shell: bash
+      env:
+        UV_CACHE_HIT: "${{ steps.setup_uv.outputs['cache-hit'] }}"
+      run: |
+        echo "setup-uv cache hit: ${UV_CACHE_HIT}"
 
     - name: Install the project
       shell: bash

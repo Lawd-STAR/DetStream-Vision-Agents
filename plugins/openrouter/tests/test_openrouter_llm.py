@@ -79,7 +79,7 @@ class TestOpenRouterLLM:
         if not os.environ.get("OPENROUTER_API_KEY"):
             pytest.skip("OPENROUTER_API_KEY environment variable not set")
         
-        llm = LLM(model="z-ai/glm-4.6")
+        llm = LLM(model="anthropic/claude-haiku-4.5")
         return llm
 
     @pytest.mark.integration

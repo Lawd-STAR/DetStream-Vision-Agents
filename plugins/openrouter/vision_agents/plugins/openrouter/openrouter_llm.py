@@ -7,9 +7,12 @@ from vision_agents.plugins.openai import LLM as OpenAILLM
 
 class OpenRouterLLM(OpenAILLM):
     """OpenRouter LLM that extends OpenAI LLM with OpenRouter-specific configuration.
-    
-    OpenRouter provides an OpenAI-compatible API, so we can reuse the OpenAI plugin
-    implementation with OpenRouter-specific defaults.
+
+    It proxies the regular models by setting base url.
+    It supports create response like the regular openAI API. It doesn't support conversation id, so that requires customization
+
+    TODO:
+    - Use manual conversation storage
     """
 
     def __init__(

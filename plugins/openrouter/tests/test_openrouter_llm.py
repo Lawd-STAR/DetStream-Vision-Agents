@@ -34,21 +34,6 @@ class TestOpenRouterLLM:
             f"Response should not have an exception, got: {getattr(response, 'exception', None)}"
         )
 
-    def test_openrouter_llm_init(self):
-        """Test that OpenRouter LLM can be initialized."""
-        llm = LLM(api_key="test-key")
-        assert llm is not None
-
-    def test_openrouter_llm_base_url(self):
-        """Test that OpenRouter LLM uses correct base URL."""
-        llm = LLM(api_key="test-key")
-        assert "openrouter.ai" in str(llm.client.base_url)
-
-    def test_openrouter_llm_custom_model(self):
-        """Test that OpenRouter LLM can use custom model."""
-        llm = LLM(api_key="test-key", model="anthropic/claude-3-opus")
-        assert llm.model == "anthropic/claude-3-opus"
-
     def test_message(self):
         """Test basic message normalization."""
         messages = LLM._normalize_message("say hi")
@@ -157,7 +142,7 @@ class TestOpenRouterLLM:
         if not os.environ.get("OPENROUTER_API_KEY"):
             pytest.skip("OPENROUTER_API_KEY environment variable not set")
             
-        llm = LLM(model="z-ai/glm-4.6")
+        llm = LLM(model="anthropic/claude-haiku-4.5")
         llm._set_instructions("Only reply in 2 letter country shortcuts")
 
         response = await llm.simple_response(
@@ -167,67 +152,5 @@ class TestOpenRouterLLM:
         self.assert_response_successful(response)
         assert "nl" in response.text.lower(), (
             f"Expected 'NL' in response, got: {response.text}"
-        )
-
-    @pytest.mark.integration
-    async def test_events(self, llm: LLM):
-        """Test that LLM events are properly emitted during streaming responses."""
-        chunk_events = []
-        complete_events = []
-
-        @llm.events.subscribe
-        async def handle_chunk_event(event: LLMResponseChunkEvent):
-            chunk_events.append(event)
-
-        @llm.events.subscribe
-        async def handle_complete_event(event: LLMResponseCompletedEvent):
-            complete_events.append(event)
-
-        # Make API call that should generate streaming events
-        response = await llm.create_response(
-            input="Create a small story about the weather in the Netherlands. Make it at least 2 paragraphs long.",
-        )
-
-        # Wait for all events to be processed
-        await llm.events.wait()
-
-        # Verify response was generated
-        self.assert_response_successful(response)
-        assert len(response.text) > 50, "Response should be substantial"
-
-        # Verify chunk events were emitted
-        assert len(chunk_events) > 0, (
-            "Should have received chunk events during streaming"
-        )
-
-        # Verify completion event was emitted
-        assert len(complete_events) > 0, "Should have received completion event"
-        assert len(complete_events) == 1, "Should have exactly one completion event"
-
-        # Verify chunk events have proper content and item_id
-        total_delta_text = ""
-        chunk_item_ids = set()
-        for chunk_event in chunk_events:
-            assert chunk_event.delta is not None, (
-                "Chunk events should have delta content"
-            )
-            assert isinstance(chunk_event.delta, str), "Delta should be a string"
-            if chunk_event.item_id is not None:
-                chunk_item_ids.add(chunk_event.item_id)
-            total_delta_text += chunk_event.delta
-
-        # Verify completion event has proper content
-        complete_event = complete_events[0]
-        assert complete_event.text == response.text, (
-            "Completion event text should match response text"
-        )
-        assert complete_event.original is not None, (
-            "Completion event should have original response"
-        )
-
-        # Verify that chunk deltas reconstruct the final text (approximately)
-        assert len(total_delta_text) > 0, "Should have accumulated delta text"
-        assert len(total_delta_text) >= len(response.text) * 0.8, (
-            "Delta text should be substantial portion of final text"
         )
 

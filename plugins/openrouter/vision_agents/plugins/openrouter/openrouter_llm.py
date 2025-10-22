@@ -47,6 +47,7 @@ class OpenRouterLLM(OpenAILLM):
     def add_conversation_history(self, kwargs):
         # Use the manual storage
         # ensure the AI remembers the past conversation
+        # TODO: there are additional formats to support here.
         new_messages = kwargs["input"]
         if not isinstance(new_messages, list):
             new_messages = [dict(content=new_messages, role="user", type="message")]

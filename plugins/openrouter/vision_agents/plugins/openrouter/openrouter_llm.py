@@ -40,3 +40,21 @@ class OpenRouterLLM(OpenAILLM):
             **kwargs,
         )
 
+    async def create_conversation(self):
+        # Do nothing, dont call super
+        pass
+
+    def add_conversation_history(self, kwargs):
+        # Use the manual storage
+        # ensure the AI remembers the past conversation
+        new_messages = kwargs["input"]
+        if not isinstance(new_messages, list):
+            new_messages = [dict(content=new_messages, role="user", type="message")]
+        if hasattr(self, '_conversation') and self._conversation:
+            old_messages = [m.original for m in self._conversation.messages]
+            kwargs["input"] = old_messages + new_messages
+            # Add messages to conversation
+            normalized_messages = self._normalize_message(new_messages)
+            for msg in normalized_messages:
+                self._conversation.messages.append(msg)
+

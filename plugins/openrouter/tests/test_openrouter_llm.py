@@ -5,7 +5,7 @@ import os
 import pytest
 from dotenv import load_dotenv
 
-from vision_agents.core.agents.conversation import Message
+from vision_agents.core.agents.conversation import Message, InMemoryConversation
 from vision_agents.core.llm.events import (
     LLMResponseChunkEvent,
     LLMResponseCompletedEvent,
@@ -80,6 +80,7 @@ class TestOpenRouterLLM:
             pytest.skip("OPENROUTER_API_KEY environment variable not set")
         
         llm = LLM(model="anthropic/claude-haiku-4.5")
+        llm._conversation = InMemoryConversation("be friendly", [])
         return llm
 
     @pytest.mark.integration

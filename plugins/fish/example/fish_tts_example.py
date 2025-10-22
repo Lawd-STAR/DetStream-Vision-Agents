@@ -32,7 +32,7 @@ async def start_agent() -> None:
     agent = Agent(
         edge=getstream.Edge(),
         agent_user=User(name="Friendly AI"),
-        instructions="You are a helpful AI assistant. Be friendly and conversational.",
+        instructions="You're a voice AI assistant. Short replies only no special characters.",
         tts=fish.TTS(),  # Uses Fish Audio for text-to-speech
         stt=deepgram.STT(),
         llm=gemini.LLM("gemini-2.0-flash"),

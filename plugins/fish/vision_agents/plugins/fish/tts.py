@@ -15,6 +15,8 @@ class TTS(tts.TTS):
     
     Fish Audio provides high-quality, multilingual text-to-speech synthesis with
     support for voice cloning via reference audio.
+
+
     """
 
     def __init__(
@@ -97,7 +99,7 @@ class TTS(tts.TTS):
         # Allow overriding via kwargs (e.g., for dynamic reference audio)
         tts_request_kwargs.update(kwargs)
         
-        tts_request = TTSRequest(**tts_request_kwargs)
+        tts_request = TTSRequest(format="pcm", sample_rate=16000, normalize=True, **tts_request_kwargs)
 
         # Stream audio from Fish Audio
         audio_stream = self.client.tts.awaitable(tts_request)

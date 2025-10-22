@@ -99,7 +99,7 @@ class TTS(tts.TTS):
         # Allow overriding via kwargs (e.g., for dynamic reference audio)
         tts_request_kwargs.update(kwargs)
         
-        tts_request = TTSRequest(format="pcm", sample_rate=16000, normalize=True, **tts_request_kwargs)
+        tts_request = TTSRequest(format="pcm", sample_rate=16000, normalize=True,reference_id="03397b4c4be74759b72533b663fbd001", **tts_request_kwargs)
 
         # Stream audio from Fish Audio
         audio_stream = self.client.tts.awaitable(tts_request)

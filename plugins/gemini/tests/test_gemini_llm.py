@@ -80,6 +80,18 @@ class TestGeminiLLM:
         assert "8" in response.text or "eight" in response.text
 
     @pytest.mark.integration
+    async def test_instruction_following(self):
+        llm = GeminiLLM(model="gemini-2.0-flash-exp")
+        llm._conversation = InMemoryConversation("be friendly", [])
+
+        llm._set_instructions("only reply in 2 letter country shortcuts")
+
+        response = await llm.simple_response(
+            text="Which country is rainy, protected from water with dikes and below sea level?",
+        )
+        assert "nl" in response.text.lower()
+
+    @pytest.mark.integration
     async def test_events(self, llm: GeminiLLM):
         """Test that LLM events are properly emitted during streaming responses."""
         # Track events and their content

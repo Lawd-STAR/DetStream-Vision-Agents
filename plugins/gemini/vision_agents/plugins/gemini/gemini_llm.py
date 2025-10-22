@@ -3,7 +3,7 @@ from typing import Optional, List, TYPE_CHECKING, Any, Dict
 
 from google import genai
 from google.genai import types
-from google.genai.types import GenerateContentResponse
+from google.genai.types import GenerateContentResponse, GenerateContentConfigOrDict, GenerateContentConfig
 
 from vision_agents.core.llm.llm import LLM, LLMResponseEvent
 from vision_agents.core.llm.llm_types import ToolSchema, NormalizedToolCallItem
@@ -83,7 +83,9 @@ class GeminiLLM(LLM):
 
         # initialize chat if needed
         if self.chat is None:
-            self.chat = self.client.chats.create(model=self.model)
+            enhanced_instructions = self._build_enhanced_instructions()
+            config = GenerateContentConfig(system_instruction=enhanced_instructions)
+            self.chat = self.client.chats.create(model=self.model, config=config)
 
         # Add tools if available - Gemini uses GenerateContentConfig
         tools_spec = self.get_available_functions()

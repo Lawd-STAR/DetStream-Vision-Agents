@@ -2,6 +2,10 @@
 
 OpenRouter plugin for vision agents. This plugin provides LLM capabilities using OpenRouter's API, which is compatible with the OpenAI API format.
 
+## Note/ Issues
+
+Instruction following doesn't always work with openrouter atm.
+
 ## Installation
 
 ```bash
@@ -28,8 +32,3 @@ agent = Agent(
     )
 )
 ```
-
-## Configuration
-
-This plugin uses the OpenAI-compatible API provided by OpenRouter. You'll need to set your OpenRouter API key as an environment variable or pass it directly to the LLM.
-

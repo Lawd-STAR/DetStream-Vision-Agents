@@ -1,14 +1,15 @@
 
 # Plugin Development Guide
 
-## Example Plugin
+## 1. Copy the example plugin folder
 
-An example plugin is located in `plugins/example`. Copying the example is the best way to create a new plugin. After copying the example be sure to:
+A sample plugin is located in `plugins/sample_plugin`. Start by copying the sample plugin and renaming it
 
-- Update the folder name "example" to your plugin's name
+## 2. Update your new plugin
+
+After you copy the example be sure to:
+
 - Open `pyproject.toml` and update the name, description etc
-- Update the event types in your `events.py` file
-- Register your events in the plugin's `__init__` method
 
 ## Folder Structure
 

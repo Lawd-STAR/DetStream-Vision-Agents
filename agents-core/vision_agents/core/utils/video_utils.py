@@ -20,7 +20,8 @@ def ensure_even_dimensions(frame: av.VideoFrame) -> av.VideoFrame:
     
     cropped = frame.reformat(width=new_width, height=new_height)
     cropped.pts = frame.pts
-    cropped.time_base = frame.time_base
+    if frame.time_base is not None:
+        cropped.time_base = frame.time_base
     
     return cropped
 

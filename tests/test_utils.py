@@ -1,7 +1,9 @@
 import os
 import tempfile
 import numpy as np
+import av
 from vision_agents.core.utils.utils import parse_instructions, Instructions
+from vision_agents.core.utils.video_utils import ensure_even_dimensions
 from vision_agents.core.edge.types import PcmData
 
 
@@ -441,5 +443,39 @@ class TestPcmDataMethods:
         assert resampled.samples.ndim == 1
 
 
-# Shared fixtures for integration tests
-
+class TestEnsureEvenDimensions:
+    """Test suite for ensure_even_dimensions function."""
+    
+    def test_even_dimensions_unchanged(self):
+        """Test that frames with even dimensions pass through unchanged."""
+        # Create a frame with even dimensions (1920x1080)
+        frame = av.VideoFrame(width=1920, height=1080, format="yuv420p")
+        
+        result = ensure_even_dimensions(frame)
+        
+        assert result.width == 1920
+        assert result.height == 1080
+    
+    def test_both_dimensions_odd_cropped(self):
+        """Test that frames with both odd dimensions are cropped."""
+        # Create a frame with both odd dimensions (1921x1081)
+        frame = av.VideoFrame(width=1921, height=1081, format="yuv420p")
+        
+        result = ensure_even_dimensions(frame)
+        
+        assert result.width == 1920  # Cropped from 1921
+        assert result.height == 1080  # Cropped from 1081
+    
+    def test_timing_information_preserved(self):
+        """Test that pts and time_base are preserved after cropping."""
+        from fractions import Fraction
+        
+        # Create a frame with timing information
+        frame = av.VideoFrame(width=1921, height=1081, format="yuv420p")
+        frame.pts = 12345
+        frame.time_base = Fraction(1, 30)
+        
+        result = ensure_even_dimensions(frame)
+        
+        assert result.pts == 12345
+        assert result.time_base == Fraction(1, 30)

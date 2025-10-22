@@ -3,7 +3,7 @@ from typing import Optional, List, TYPE_CHECKING, Any, Dict
 
 from google import genai
 from google.genai import types
-from google.genai.types import GenerateContentResponse, GenerateContentConfigOrDict, GenerateContentConfig
+from google.genai.types import GenerateContentResponse, GenerateContentConfig
 
 from vision_agents.core.llm.llm import LLM, LLMResponseEvent
 from vision_agents.core.llm.llm_types import ToolSchema, NormalizedToolCallItem

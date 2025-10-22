@@ -371,10 +371,6 @@ class Agent:
             self._connection = connection
             self._is_running = True
 
-            connection._connection._coordinator_ws_client.on_wildcard(
-                "*", lambda event_name, event: self.events.send(event)
-            )
-
             self.logger.info(f"🤖 Agent joined call: {call.id}")
 
             # Set up audio and video tracks together to avoid SDP issues

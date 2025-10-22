@@ -105,6 +105,7 @@ Our favorite people & projects to follow for vision AI
 * https://x.com/romainhuet head of developer experience openAI
 * https://x.com/thorwebdev eleven labs
 * https://x.com/mervenoyann huggingface, quite some posts about Video AI
+* https://x.com/stash_pomichter spatial memory for robots
 
 ## Inspiration
 

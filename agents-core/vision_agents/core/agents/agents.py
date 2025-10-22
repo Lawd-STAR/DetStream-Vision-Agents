@@ -33,6 +33,8 @@ from ..stt.events import STTTranscriptEvent, STTErrorEvent
 from ..stt.stt import STT
 from ..tts.tts import TTS
 from ..turn_detection import TurnDetector, TurnStartedEvent, TurnEndedEvent
+from ..utils.video_forwarder import VideoForwarder
+from ..utils.video_utils import ensure_even_dimensions
 from ..vad import VAD
 from ..vad.events import VADAudioEvent
 from . import events
@@ -698,8 +700,8 @@ class Agent:
 
     async def _process_track(self, track_id: str, track_type: int, participant):
         # TODO: handle CancelledError
-        # we only process video tracks
-        if track_type != TrackType.TRACK_TYPE_VIDEO:
+        # we only process video tracks (camera video or screenshare)
+        if track_type not in (TrackType.TRACK_TYPE_VIDEO, TrackType.TRACK_TYPE_SCREEN_SHARE):
             return
 
         # subscribe to the video track
@@ -708,8 +710,16 @@ class Agent:
             self.logger.error(f"Failed to subscribe to {track_id}")
             return
 
-        # Import VideoForwarder
-        from ..utils.video_forwarder import VideoForwarder
+        # Wrap screenshare tracks to ensure even dimensions for H.264 encoding
+        if track_type == TrackType.TRACK_TYPE_SCREEN_SHARE:            
+            class _EvenDimensionsTrack(VideoStreamTrack):
+                def __init__(self, src): 
+                    super().__init__()
+                    self.src = src
+                async def recv(self): 
+                    return ensure_even_dimensions(await self.src.recv())
+            
+            track = _EvenDimensionsTrack(track)  # type: ignore[arg-type]
 
         # Create a SHARED VideoForwarder for the RAW incoming track
         # This prevents multiple recv() calls competing on the same track

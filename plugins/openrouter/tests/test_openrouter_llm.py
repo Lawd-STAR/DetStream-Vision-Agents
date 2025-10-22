@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from vision_agents.core.agents.conversation import Message, InMemoryConversation
 from vision_agents.core.llm.events import (
     LLMResponseChunkEvent,
-    LLMResponseCompletedEvent,
 )
 from vision_agents.plugins.openrouter import LLM
 

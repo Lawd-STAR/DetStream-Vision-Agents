@@ -112,7 +112,8 @@ class OpenAILLM(LLM):
             self.openai_conversation = await self.client.conversations.create()
 
     def add_conversation_history(self, kwargs):
-        kwargs["conversation"] = self.openai_conversation.id
+        if self.openai_conversation:
+            kwargs["conversation"] = self.openai_conversation.id
 
     async def create_response(
         self, *args: Any, **kwargs: Any

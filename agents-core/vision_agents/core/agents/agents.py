@@ -29,7 +29,7 @@ from ..llm.realtime import Realtime
 from ..logging_utils import CallContextToken, clear_call_context, set_call_context
 from ..mcp import MCPBaseServer, MCPManager
 from ..processors.base_processor import Processor, ProcessorType, filter_processors
-from ..stt.events import STTTranscriptEvent
+from ..stt.events import STTTranscriptEvent, STTErrorEvent
 from ..stt.stt import STT
 from ..tts.tts import TTS
 from ..turn_detection import TurnDetector, TurnStartedEvent, TurnEndedEvent
@@ -245,6 +245,10 @@ class Agent:
             )
 
     async def _setup_speech_events(self):
+        @self.events.subscribe
+        async def on_error(event: STTErrorEvent):
+            self.logger.error("stt error event %s", event)
+
         @self.events.subscribe
         async def on_stt_transcript_event_sync_conversation(event: STTTranscriptEvent):
             self.logger.info(f"🎤 [Transcript]: {event.text}")

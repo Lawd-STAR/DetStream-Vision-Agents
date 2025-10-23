@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from vision_agents.core import User
 from vision_agents.core.agents import Agent
-from vision_agents.plugins import fish, getstream, smart_turn, gemini, deepgram
+from vision_agents.plugins import fish, getstream, smart_turn, gemini
 
 load_dotenv()
 
@@ -37,6 +37,7 @@ async def start_agent() -> None:
         llm=gemini.LLM("gemini-2.0-flash"),
         turn_detection=smart_turn.TurnDetection(buffer_duration=2.0, confidence_threshold=0.5),
     )
+
     await agent.create_user()
 
     call = agent.edge.client.video.call("default", str(uuid4()))

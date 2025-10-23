@@ -71,19 +71,9 @@ class STT(stt.STT):
         self.ignore_timestamps = ignore_timestamps
         self._current_user: Optional[Union[Dict[str, Any], "Participant"]] = None
 
-    def _pcm_to_wav_bytes(self, pcm_data: PcmData) -> bytes:
-        """
-        Convert PCM data to WAV format bytes.
-
-        Args:
-            pcm_data: PCM audio data from the audio pipeline.
-
-        Returns:
-            WAV format audio data as bytes.
-        """
+    @staticmethod
+    def _pcm_to_wav_bytes(pcm_data: PcmData) -> bytes:
         wav_buffer = io.BytesIO()
-
-        # TODO: we should resample here
 
         with wave.open(wav_buffer, "wb") as wav_file:
             wav_file.setnchannels(1)  # Mono
@@ -137,10 +127,6 @@ class STT(stt.STT):
 
         try:
             # Convert PCM to WAV format
-            logger.info(
-                "Converting PCM  %s to WAV ", pcm_data.sample_rate,
-                extra={"sample_rate": self.sample_rate},
-            )
             wav_data = self._pcm_to_wav_bytes(pcm_data)
 
             # Build ASR request
@@ -161,7 +147,7 @@ class STT(stt.STT):
             transcript_text = response.text.strip()
 
             if not transcript_text:
-                logger.debug("No transcript returned from Fish Audio")
+                logger.error("No transcript returned from Fish Audio %s", pcm_data.duration)
                 return None
 
             # Build metadata from response

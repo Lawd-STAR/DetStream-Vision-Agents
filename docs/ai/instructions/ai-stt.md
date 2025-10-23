@@ -20,3 +20,7 @@ class MySTT(stt.STT):
         pass
 
 ```
+
+## Testing the STT
+
+A good example of testing the STT can be found in plugins/fish/tests/test_fish_stt.py

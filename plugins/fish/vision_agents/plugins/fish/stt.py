@@ -83,10 +83,12 @@ class STT(stt.STT):
         """
         wav_buffer = io.BytesIO()
 
+        # TODO: we should resample here
+
         with wave.open(wav_buffer, "wb") as wav_file:
             wav_file.setnchannels(1)  # Mono
             wav_file.setsampwidth(2)  # 16-bit
-            wav_file.setframerate(self.sample_rate)
+            wav_file.setframerate(pcm_data.sample_rate)
             
             # Convert numpy array to bytes if needed
             if isinstance(pcm_data.samples, np.ndarray):
@@ -119,6 +121,7 @@ class STT(stt.STT):
             logger.warning("Fish Audio STT is closed, ignoring audio")
             return None
 
+
         # Store the current user context
         self._current_user = user_metadata
 
@@ -134,8 +137,8 @@ class STT(stt.STT):
 
         try:
             # Convert PCM to WAV format
-            logger.debug(
-                "Converting PCM to WAV",
+            logger.info(
+                "Converting PCM  %s to WAV ", pcm_data.sample_rate,
                 extra={"sample_rate": self.sample_rate},
             )
             wav_data = self._pcm_to_wav_bytes(pcm_data)

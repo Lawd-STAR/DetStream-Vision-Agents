@@ -1,5 +1,4 @@
-import asyncio
-import pytest
+from getstream.video.rtc.pb.stream.video.sfu.models.models_pb2 import TrackType
 
 from vision_agents.core.events.manager import EventManager
 from vision_agents.core.edge.events import TrackAddedEvent, TrackRemovedEvent
@@ -16,7 +15,6 @@ class TestTrackRepublishing:
     when the track_key already exists in _track_map.
     """
     
-    @pytest.mark.asyncio
     async def test_track_events_flow_correctly(self):
         """Verify that track events (add -> remove -> add) flow through the event system."""
         event_manager = EventManager()
@@ -32,7 +30,7 @@ class TestTrackRepublishing:
         
         # Simulate track lifecycle: start -> stop -> start again
         track_id = "screenshare-track-1"
-        track_type = 3  # TRACK_TYPE_SCREEN_SHARE
+        track_type = TrackType.TRACK_TYPE_SCREEN_SHARE
         
         # 1. Start screenshare
         event_manager.send(TrackAddedEvent(
@@ -40,7 +38,7 @@ class TestTrackRepublishing:
             track_id=track_id,
             track_type=track_type,
         ))
-        await asyncio.sleep(0.01)
+        await event_manager.wait()
         
         assert len(events) == 1
         assert isinstance(events[0], TrackAddedEvent)
@@ -52,7 +50,7 @@ class TestTrackRepublishing:
             track_id=track_id,
             track_type=track_type,
         ))
-        await asyncio.sleep(0.01)
+        await event_manager.wait()
         
         assert len(events) == 2
         assert isinstance(events[1], TrackRemovedEvent)
@@ -63,7 +61,7 @@ class TestTrackRepublishing:
             track_id=track_id,
             track_type=track_type,
         ))
-        await asyncio.sleep(0.01)
+        await event_manager.wait()
         
         # Before the fix: The agent would never receive this third event
         assert len(events) == 3, "Republishing track should emit TrackAddedEvent"

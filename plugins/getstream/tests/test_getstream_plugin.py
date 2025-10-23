@@ -67,3 +67,6 @@ class TestTrackRepublishing:
         assert len(events) == 3, "Republishing track should emit TrackAddedEvent"
         assert isinstance(events[2], TrackAddedEvent)
         assert events[2].track_id == track_id
+
+        # Cleanup
+        event_manager.unsubscribe(collect_track_events)

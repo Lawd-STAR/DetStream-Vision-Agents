@@ -10,9 +10,61 @@ import os
 
 import numpy as np
 import pytest
+from dotenv import load_dotenv
 from torchvision.io.video import av
 
 from vision_agents.core.edge.types import PcmData
+from vision_agents.core.stt.events import STTTranscriptEvent, STTErrorEvent
+
+
+load_dotenv()
+
+class STTSession:
+    """Helper class for testing STT implementations.
+    
+    Automatically subscribes to transcript and error events,
+    collects them, and provides a convenient wait method.
+    """
+    
+    def __init__(self, stt):
+        """Initialize STT session with an STT object.
+        
+        Args:
+            stt: STT implementation to monitor
+        """
+        self.stt = stt
+        self.transcripts = []
+        self.errors = []
+        self._event = asyncio.Event()
+        
+        # Subscribe to events
+        @stt.events.subscribe
+        async def on_transcript(event: STTTranscriptEvent):
+            self.transcripts.append(event)
+            self._event.set()
+        
+        @stt.events.subscribe
+        async def on_error(event: STTErrorEvent):
+            self.errors.append(event.error)
+            self._event.set()
+        
+        self._on_transcript = on_transcript
+        self._on_error = on_error
+    
+    async def wait_for_result(self, timeout: float = 30.0):
+        """Wait for either a transcript or error event.
+        
+        Args:
+            timeout: Maximum time to wait in seconds
+            
+        Raises:
+            asyncio.TimeoutError: If no result received within timeout
+        """
+        # Allow event subscriptions to be processed
+        await asyncio.sleep(0.01)
+        
+        # Wait for an event
+        await asyncio.wait_for(self._event.wait(), timeout=timeout)
 
 
 def get_assets_dir():

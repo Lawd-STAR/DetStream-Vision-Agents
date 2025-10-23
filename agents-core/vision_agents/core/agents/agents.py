@@ -177,6 +177,7 @@ class Agent:
         """
         Overwrite simple_response if you want to change how the Agent class calls the LLM
         """
+        logger.info("asking LLM to reply to %s", text)
         with self.tracer.start_as_current_span("simple_response") as span:
             response = await self.llm.simple_response(
                 text=text, processors=self.processors, participant=participant

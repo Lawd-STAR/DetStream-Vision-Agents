@@ -2,16 +2,16 @@ import io
 import logging
 import os
 import wave
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import Optional
 
 import numpy as np
 from fish_audio_sdk import Session, ASRRequest
 from getstream.video.rtc.track_util import PcmData
 
 from vision_agents.core import stt
+from vision_agents.core.stt import TranscriptResponse
 
-if TYPE_CHECKING:
-    from vision_agents.core.edge.types import Participant
+from vision_agents.core.edge.types import Participant
 
 logger = logging.getLogger(__name__)
 
@@ -37,39 +37,19 @@ class STT(stt.STT):
         self,
         api_key: Optional[str] = None,
         language: Optional[str] = None,
-        ignore_timestamps: bool = False,
-        sample_rate: int = 16000,
-        base_url: Optional[str] = None,
         client: Optional[Session] = None,
     ):
-        """
-        Initialize the Fish Audio STT service.
-
-        Args:
-            api_key: Fish Audio API key. If not provided, the FISH_API_KEY
-                    environment variable will be used.
-            language: Language code for transcription (e.g., "en", "zh"). If None,
-                     automatic language detection will be used.
-            ignore_timestamps: Skip timestamp processing for faster results.
-            sample_rate: Sample rate of the audio in Hz (default: 16000).
-            base_url: Optional custom API endpoint.
-            client: Optionally pass in your own instance of the Fish Audio Session.
-        """
-        super().__init__(sample_rate=sample_rate, provider_name="fish")
+        super().__init__(provider_name="fish")
 
         if not api_key:
             api_key = os.environ.get("FISH_API_KEY")
 
         if client is not None:
             self.client = client
-        elif base_url:
-            self.client = Session(api_key, base_url=base_url)
         else:
             self.client = Session(api_key)
 
         self.language = language
-        self.ignore_timestamps = ignore_timestamps
-        self._current_user: Optional[Union[Dict[str, Any], "Participant"]] = None
 
     @staticmethod
     def _pcm_to_wav_bytes(pcm_data: PcmData) -> bytes:
@@ -88,11 +68,11 @@ class STT(stt.STT):
 
         return wav_buffer.getvalue()
 
-    async def _process_audio_impl(
+    async def process_audio(
         self,
         pcm_data: PcmData,
-        user_metadata: Optional[Union[Dict[str, Any], "Participant"]] = None,
-    ) -> Optional[List[Tuple[bool, str, Dict[str, Any]]]]:
+        participant: Optional[Participant] = None,
+    ):
         """
         Process audio data through Fish Audio for transcription.
 
@@ -107,13 +87,9 @@ class STT(stt.STT):
             List of tuples (is_final, text, metadata) representing transcription results,
             or None if no results are available. Fish Audio returns final results only.
         """
-        if self._is_closed:
+        if self.closed:
             logger.warning("Fish Audio STT is closed, ignoring audio")
             return None
-
-
-        # Store the current user context
-        self._current_user = user_metadata
 
         # Check if we have valid audio data
         if not hasattr(pcm_data, "samples") or pcm_data.samples is None:
@@ -133,7 +109,7 @@ class STT(stt.STT):
             asr_request = ASRRequest(
                 audio=wav_data,
                 language=self.language,
-                ignore_timestamps=self.ignore_timestamps,
+                ignore_timestamps=True,
             )
 
             # Send to Fish Audio API
@@ -150,23 +126,12 @@ class STT(stt.STT):
                 logger.error("No transcript returned from Fish Audio %s", pcm_data.duration)
                 return None
 
-            # Build metadata from response
-            metadata: Dict[str, Any] = {
-                "audio_duration_ms": response.duration,
-                "language": self.language or "auto",
-                "model_name": "fish-audio-asr",
-            }
-
-            # Include segments if timestamps were requested
-            if not self.ignore_timestamps and response.segments:
-                metadata["segments"] = [
-                    {
-                        "text": segment.text,
-                        "start": segment.start,
-                        "end": segment.end,
-                    }
-                    for segment in response.segments
-                ]
+            # Build response metadata
+            response_metadata = TranscriptResponse(
+                audio_duration_ms=response.duration,
+                language=self.language or "auto",
+                model_name="fish-audio-asr",
+            )
 
             logger.debug(
                 "Received transcript from Fish Audio",
@@ -176,8 +141,7 @@ class STT(stt.STT):
                 },
             )
 
-            # Return as final result (Fish Audio doesn't support streaming/partial results)
-            return [(True, transcript_text, metadata)]
+            self._emit_transcript_event(transcript_text, participant, response_metadata)
 
         except Exception as e:
             logger.error(
@@ -186,13 +150,4 @@ class STT(stt.STT):
             )
             # Let the base class handle error emission
             raise
-
-    async def close(self):
-        """Close the Fish Audio STT service and clean up resources."""
-        if self._is_closed:
-            logger.debug("Fish Audio STT service already closed")
-            return
-
-        logger.info("Closing Fish Audio STT service")
-        await super().close()
 

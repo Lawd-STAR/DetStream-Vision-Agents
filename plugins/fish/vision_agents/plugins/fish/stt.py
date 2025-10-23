@@ -2,7 +2,7 @@ import io
 import logging
 import os
 import wave
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Optional
 
 import numpy as np
 from fish_audio_sdk import Session, ASRRequest

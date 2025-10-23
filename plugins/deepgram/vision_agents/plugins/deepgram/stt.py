@@ -3,7 +3,7 @@ import contextlib
 import logging
 import os
 import time
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import websockets

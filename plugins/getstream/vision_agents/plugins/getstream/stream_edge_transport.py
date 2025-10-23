@@ -122,7 +122,6 @@ class StreamEdge(EdgeTransport):
                         track_id=track_id,
                         track_type=track_type_int,
                         user=event.participant,
-                        user_metadata=event.participant,
                     )
                 )
             return
@@ -171,7 +170,6 @@ class StreamEdge(EdgeTransport):
                         track_id=track_id,
                         track_type=track_type_int,
                         user=event.participant,
-                        user_metadata=event.participant,
                     )
                 )
         else:
@@ -226,7 +224,6 @@ class StreamEdge(EdgeTransport):
                         track_id=track_id,
                         track_type=track_type_int,
                         user=participant,
-                        user_metadata=participant,
                     )
                 )
                 # Mark as unpublished instead of removing
@@ -283,13 +280,12 @@ class StreamEdge(EdgeTransport):
         self.events.silent(events.AudioReceivedEvent)
 
         @connection.on("audio")
-        async def on_audio_received(pcm: PcmData, participant: Participant):
+        async def on_audio_received(pcm: PcmData | None, participant: Participant):
             self.events.send(
                 events.AudioReceivedEvent(
                     plugin_name="getstream",
                     pcm_data=pcm,
                     participant=participant,
-                    user_metadata=participant,
                 )
             )
 

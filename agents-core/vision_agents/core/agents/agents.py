@@ -177,6 +177,7 @@ class Agent:
         """
         Overwrite simple_response if you want to change how the Agent class calls the LLM
         """
+        logger.info("asking LLM to reply to %s", text)
         with self.tracer.start_as_current_span("simple_response") as span:
             response = await self.llm.simple_response(
                 text=text, processors=self.processors, participant=participant
@@ -308,6 +309,7 @@ class Agent:
 
         @self.events.subscribe
         async def on_stt_transcript_event_create_response(event: STTTranscriptEvent):
+            import pdb; pdb.set_trace()
             if self.realtime_mode or not self.llm:
                 # when running in realtime mode, there is no need to send the response to the LLM
                 return

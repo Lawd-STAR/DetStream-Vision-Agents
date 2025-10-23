@@ -152,8 +152,7 @@ class STT(stt.STT):
                 },
             )
 
-            # Return as final result (Fish Audio doesn't support streaming/partial results)
-            return [(True, transcript_text, metadata)]
+            self._emit_transcript_event(transcript_text, participant, metadata)
 
         except Exception as e:
             logger.error(

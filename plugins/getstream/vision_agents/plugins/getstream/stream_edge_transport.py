@@ -109,9 +109,22 @@ class StreamEdge(EdgeTransport):
         # First check if track already exists in map (e.g., from previous unpublish/republish)
         if track_key in self._track_map:
             self._track_map[track_key]["published"] = True
+            track_id = self._track_map[track_key]["track_id"]
             self.logger.info(
-                f"Track marked as published (already existed): {track_key}"
+                f"Track re-published: {track_type_int} from {user_id}, track_id: {track_id}"
             )
+            
+            # Emit TrackAddedEvent so agent can switch to this track
+            if not is_agent_track:
+                self.events.send(
+                    events.TrackAddedEvent(
+                        plugin_name="getstream",
+                        track_id=track_id,
+                        track_type=track_type_int,
+                        user=event.participant,
+                        user_metadata=event.participant,
+                    )
+                )
             return
 
         # Wait for pending track to be populated (with 10 second timeout)

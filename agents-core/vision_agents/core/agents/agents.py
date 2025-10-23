@@ -14,7 +14,7 @@ from opentelemetry.trace import Tracer
 
 from getstream.video.rtc.pb.stream.video.sfu.models.models_pb2 import TrackType
 from ..edge import sfu_events
-from ..edge.events import AudioReceivedEvent, TrackAddedEvent, CallEndedEvent
+from ..edge.events import AudioReceivedEvent, TrackAddedEvent, TrackRemovedEvent, CallEndedEvent
 from ..edge.types import Connection, Participant, PcmData, User
 from ..events.manager import EventManager
 from ..llm import events as llm_events
@@ -161,6 +161,9 @@ class Agent:
         self._interval_task = None
         self._callback_executed = False
         self._track_tasks: Dict[str, asyncio.Task] = {}
+        # Track metadata: track_id -> (track_type, participant, forwarder)
+        self._active_video_tracks: Dict[str, tuple[int, Any, Any]] = {}
+        self._current_video_track_id: Optional[str] = None
         self._connection: Optional[Connection] = None
         self._audio_track: Optional[aiortc.AudioStreamTrack] = None
         self._video_track: Optional[VideoStreamTrack] = None
@@ -666,9 +669,47 @@ class Agent:
             if not track_id or not track_type:
                 return
 
+            # If track is already being processed, just switch to it
+            if track_id in self._active_video_tracks:
+                track_type_name = TrackType.Name(track_type)
+                self.logger.info(f"🎥 Track re-added: {track_type_name} ({track_id}), switching to it")
+                
+                if self.realtime_mode and isinstance(self.llm, Realtime):
+                    # Get the existing forwarder and switch to this track
+                    _, _, forwarder = self._active_video_tracks[track_id]
+                    track = self.edge.add_track_subscriber(track_id)
+                    if track and forwarder:
+                        await self.llm._watch_video_track(track, shared_forwarder=forwarder)
+                        self._current_video_track_id = track_id
+                return
+
             task = asyncio.create_task(self._process_track(track_id, track_type, user))
             self._track_tasks[track_id] = task
             task.add_done_callback(_log_task_exception)
+
+        @self.edge.events.subscribe
+        async def on_track_removed(event: TrackRemovedEvent):
+            track_id = event.track_id
+            track_type = event.track_type
+            if not track_id:
+                return
+
+            track_type_name = TrackType.Name(track_type) if track_type else "unknown"
+            self.logger.info(f"🎥 Track removed: {track_type_name} ({track_id})")
+
+            # Cancel the processing task for this track
+            if track_id in self._track_tasks:
+                self._track_tasks[track_id].cancel()
+                self._track_tasks.pop(track_id)
+
+            # Clean up track metadata
+            self._active_video_tracks.pop(track_id, None)
+            
+            # If this was the active track, switch to any other available track
+            if track_id == self._current_video_track_id and self.realtime_mode and isinstance(self.llm, Realtime):
+                self.logger.info("🎥 Active video track removed, switching to next available")
+                self._current_video_track_id = None
+                await self._switch_to_next_available_track()
 
     async def _reply_to_audio(
         self, pcm_data: PcmData, participant: Participant
@@ -697,6 +738,34 @@ class Agent:
             elif self.stt:
                 self.logger.debug(f"🎵 Processing audio from {participant}")
                 await self.stt.process_audio(pcm_data, participant)
+
+    async def _switch_to_next_available_track(self) -> None:
+        """Switch to any available video track."""
+        if not self._active_video_tracks:
+            self.logger.info("🎥 No video tracks available")
+            self._current_video_track_id = None
+            return
+        
+        # Just pick the first available video track
+        for track_id, (track_type, participant, forwarder) in self._active_video_tracks.items():
+            # Only consider video tracks (camera or screenshare)
+            if track_type not in (TrackType.TRACK_TYPE_VIDEO, TrackType.TRACK_TYPE_SCREEN_SHARE):
+                continue
+            
+            track_type_name = TrackType.Name(track_type)
+            self.logger.info(f"🎥 Switching to track: {track_type_name} ({track_id})")
+            
+            # Get the track and forwarder
+            track = self.edge.add_track_subscriber(track_id)
+            if track and forwarder and isinstance(self.llm, Realtime):
+                # Send to Realtime provider
+                await self.llm._watch_video_track(track, shared_forwarder=forwarder)
+                self._current_video_track_id = track_id
+                return
+            else:
+                self.logger.error(f"Failed to switch to track {track_id}")
+        
+        self.logger.warning("🎥 No suitable video tracks found")
 
     async def _process_track(self, track_id: str, track_type: int, participant):
         # TODO: handle CancelledError
@@ -737,7 +806,12 @@ class Agent:
             self._video_forwarders = []
         self._video_forwarders.append(raw_forwarder)
 
-        # If Realtime provider supports video, determine which track to send
+        # Store track metadata
+        self._active_video_tracks[track_id] = (track_type, participant, raw_forwarder)
+
+        # If Realtime provider supports video, switch to this new track
+        track_type_name = TrackType.Name(track_type)
+        
         if self.realtime_mode:
             if self._video_track:
                 # We have a video publisher (e.g., YOLO processor)
@@ -759,13 +833,15 @@ class Agent:
                     await self.llm._watch_video_track(
                         self._video_track, shared_forwarder=processed_forwarder
                     )
+                    self._current_video_track_id = track_id
             else:
-                # No video publisher, send raw frames
-                self.logger.info("🎥 Forwarding RAW video frames to Realtime provider")
+                # No video publisher, send raw frames - switch to this new track
+                self.logger.info(f"🎥 Switching to {track_type_name} track: {track_id}")
                 if isinstance(self.llm, Realtime):
                     await self.llm._watch_video_track(
                         track, shared_forwarder=raw_forwarder
                     )
+                    self._current_video_track_id = track_id
 
         hasImageProcessers = len(self.image_processors) > 0
 

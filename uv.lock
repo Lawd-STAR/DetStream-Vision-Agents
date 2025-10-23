@@ -23,6 +23,7 @@ members = [
     "vision-agents-plugins-krisp",
     "vision-agents-plugins-moonshine",
     "vision-agents-plugins-openai",
+    "vision-agents-plugins-openrouter",
     "vision-agents-plugins-silero",
     "vision-agents-plugins-smart-turn",
     "vision-agents-plugins-ultralytics",
@@ -5286,6 +5287,32 @@ dev = [
 requires-dist = [
     { name = "openai", extras = ["realtime"], specifier = ">=2.5.0" },
     { name = "vision-agents", editable = "agents-core" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.4.1" },
+    { name = "pytest-asyncio", specifier = ">=1.0.0" },
+]
+
+[[package]]
+name = "vision-agents-plugins-openrouter"
+source = { editable = "plugins/openrouter" }
+dependencies = [
+    { name = "vision-agents" },
+    { name = "vision-agents-plugins-openai" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "vision-agents", editable = "agents-core" },
+    { name = "vision-agents-plugins-openai", editable = "plugins/openai" },
 ]
 
 [package.metadata.requires-dev]

@@ -846,7 +846,7 @@ class Agent:
                         )
                         self._current_video_track_id = track_id
 
-            hasImageProcessers = len(self.image_processors) > 0
+            has_image_processors = len(self.image_processors) > 0
 
             # video processors - pass the raw forwarder (they process incoming frames)
             for processor in self.video_processors:
@@ -860,7 +860,7 @@ class Agent:
                     )
 
             # Use raw forwarder for image processors - only if there are image processors
-            if not hasImageProcessers:
+            if not has_image_processors:
                 # No image processors, just keep the connection alive
                 self.logger.info(
                     "No image processors, video processing handled by video processors only"
@@ -881,7 +881,7 @@ class Agent:
                         timeout_errors = 0
                         consecutive_errors = 0
 
-                        if hasImageProcessers:
+                        if has_image_processors:
                             img = video_frame.to_image()
 
                             for processor in self.image_processors:

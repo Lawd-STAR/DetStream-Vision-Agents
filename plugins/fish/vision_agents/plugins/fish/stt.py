@@ -9,9 +9,9 @@ from fish_audio_sdk import Session, ASRRequest
 from getstream.video.rtc.track_util import PcmData
 
 from vision_agents.core import stt
+from vision_agents.core.stt import TranscriptResponse
 
-if TYPE_CHECKING:
-    from vision_agents.core.edge.types import Participant
+from vision_agents.core.edge.types import Participant
 
 logger = logging.getLogger(__name__)
 
@@ -126,23 +126,12 @@ class STT(stt.STT):
                 logger.error("No transcript returned from Fish Audio %s", pcm_data.duration)
                 return None
 
-            # Build metadata from response
-            metadata: Dict[str, Any] = {
-                "audio_duration_ms": response.duration,
-                "language": self.language or "auto",
-                "model_name": "fish-audio-asr",
-            }
-
-            # Include segments if timestamps were requested
-            if not self.ignore_timestamps and response.segments:
-                metadata["segments"] = [
-                    {
-                        "text": segment.text,
-                        "start": segment.start,
-                        "end": segment.end,
-                    }
-                    for segment in response.segments
-                ]
+            # Build response metadata
+            response_metadata = TranscriptResponse(
+                audio_duration_ms=response.duration,
+                language=self.language or "auto",
+                model_name="fish-audio-asr",
+            )
 
             logger.debug(
                 "Received transcript from Fish Audio",
@@ -152,7 +141,7 @@ class STT(stt.STT):
                 },
             )
 
-            self._emit_transcript_event(transcript_text, participant, metadata)
+            self._emit_transcript_event(transcript_text, participant, response_metadata)
 
         except Exception as e:
             logger.error(
@@ -161,13 +150,4 @@ class STT(stt.STT):
             )
             # Let the base class handle error emission
             raise
-
-    async def close(self):
-        """Close the Fish Audio STT service and clean up resources."""
-        if self._is_closed:
-            logger.debug("Fish Audio STT service already closed")
-            return
-
-        logger.info("Closing Fish Audio STT service")
-        await super().close()
 

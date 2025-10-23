@@ -38,6 +38,7 @@ import wave
 import fal_client
 from getstream.video.rtc.track_util import PcmData
 from vision_agents.core import stt
+from vision_agents.core.stt import TranscriptResponse
 
 logger = logging.getLogger(__name__)
 
@@ -154,8 +155,9 @@ class STT(stt.STT):
                 if "text" in result:
                     text = result["text"].strip()
                     if text:
+                        response_metadata = TranscriptResponse()
                         self._emit_transcript_event(
-                            text, user_metadata, {"chunks": result.get("chunks", [])}
+                            text, user_metadata, response_metadata
                         )
             finally:
                 # Clean up temporary file

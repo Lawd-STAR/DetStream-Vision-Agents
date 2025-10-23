@@ -9,6 +9,7 @@ class TranscriptResponse:
     language: Optional[str] = None
     processing_time_ms: Optional[float] = None
     audio_duration_ms: Optional[float] = None
+    model_name: Optional[str] = None
     other: Optional[dict] = None
 
 @dataclass
@@ -44,10 +45,6 @@ class STTTranscriptEvent(PluginBaseEvent):
     @property
     def model_name(self) -> Optional[str]:
         return self.response.model_name
-    
-    @property
-    def words(self) -> Optional[list[dict[str, Any]]]:
-        return self.response.words
 
 
 @dataclass
@@ -79,10 +76,6 @@ class STTPartialTranscriptEvent(PluginBaseEvent):
     @property
     def model_name(self) -> Optional[str]:
         return self.response.model_name
-    
-    @property
-    def words(self) -> Optional[list[dict[str, Any]]]:
-        return self.response.words
 
 
 @dataclass

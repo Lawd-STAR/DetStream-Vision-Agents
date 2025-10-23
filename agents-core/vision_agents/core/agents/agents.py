@@ -309,7 +309,6 @@ class Agent:
 
         @self.events.subscribe
         async def on_stt_transcript_event_create_response(event: STTTranscriptEvent):
-            import pdb; pdb.set_trace()
             if self.realtime_mode or not self.llm:
                 # when running in realtime mode, there is no need to send the response to the LLM
                 return

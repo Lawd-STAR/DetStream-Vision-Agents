@@ -20,6 +20,7 @@ from deepgram.listen.v1.socket_client import AsyncV1SocketClient
 from getstream.video.rtc.track_util import PcmData
 
 from vision_agents.core import stt
+from vision_agents.core.stt import TranscriptResponse
 
 from .utils import generate_silence
 
@@ -217,20 +218,17 @@ class STT(stt.STT):
         # Check if this is a final result
         is_final = transcript.get("is_final", False)
 
-        # Create metadata with useful information
-        metadata = {
-            "confidence": alternatives[0].get("confidence", 0),
-            "words": alternatives[0].get("words", []),
-            "is_final": is_final,
-            "channel_index": transcript.get("channel_index", 0),
-        }
+        # Create response metadata
+        response_metadata = TranscriptResponse(
+            confidence=alternatives[0].get("confidence", 0),
+        )
 
         # Emit immediately for real-time responsiveness
         if is_final:
-            self._emit_transcript_event(transcript_text, self._current_user, metadata)
+            self._emit_transcript_event(transcript_text, self._current_user, response_metadata)
         else:
             self._emit_partial_transcript_event(
-                transcript_text, self._current_user, metadata
+                transcript_text, self._current_user, response_metadata
             )
 
         logger.debug(
@@ -238,7 +236,7 @@ class STT(stt.STT):
             extra={
                 "is_final": is_final,
                 "text_length": len(transcript_text),
-                "confidence": metadata["confidence"],
+                "confidence": response_metadata.confidence,
             },
         )
 

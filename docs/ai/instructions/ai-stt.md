@@ -2,6 +2,7 @@
 
 ```python
 from vision_agents.core import stt
+from vision_agents.core.stt.events import TranscriptResponse
 
 class MySTT(stt.STT):
     
@@ -24,12 +25,19 @@ class MySTT(stt.STT):
         parts = self.client.stt(pcm_data, stream=True)
         full_text = ""
         for part in parts:
+            response = TranscriptResponse(
+                confidence=0.9, 
+                language='en', 
+                processing_time_ms=300,
+                audio_duration_ms=2000,
+                other={}
+            )
             # parts that aren't finished
-            self._emit_partial_transcript_event(part, participant, metadata)
+            self._emit_partial_transcript_event(part, participant, response)
             full_text += part
             
         # the full text
-        self._emit_transcript_event(full_text, participant, metadata)
+        self._emit_transcript_event(full_text, participant, response)
 
 ```
 

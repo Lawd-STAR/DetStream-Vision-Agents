@@ -7,6 +7,7 @@ from getstream.video.rtc.track_util import PcmData
 from ..edge.types import Participant
 from vision_agents.core.events.manager import EventManager
 from . import events
+from .events import TranscriptResponse
 
 logger = logging.getLogger(__name__)
 
@@ -37,62 +38,52 @@ class STT(abc.ABC):
     def _emit_transcript_event(
         self,
         text: str,
-        user_metadata: Optional[Union[Dict[str, Any], Participant]],
-        metadata: Dict[str, Any],
+        participant: Optional[Union[Dict[str, Any], Participant]],
+        response: TranscriptResponse,
     ):
         """
         Emit a final transcript event with structured data.
 
         Args:
             text: The transcribed text.
-            user_metadata: User-specific metadata.
-            metadata: Transcription metadata (processing time, confidence, etc.).
+            participant: Participant metadata.
+            response: Transcription response metadata.
         """
         self.events.send(events.STTTranscriptEvent(
             session_id=self.session_id,
             plugin_name=self.provider_name,
             text=text,
-            user_metadata=user_metadata,
-            confidence=metadata.get("confidence"),
-            language=metadata.get("language"),
-            processing_time_ms=metadata.get("processing_time_ms"),
-            audio_duration_ms=metadata.get("audio_duration_ms"),
-            model_name=metadata.get("model_name"),
-            words=metadata.get("words"),
+            user_metadata=participant,
+            response=response,
         ))
 
     def _emit_partial_transcript_event(
         self,
         text: str,
-        user_metadata: Optional[Union[Dict[str, Any], Participant]],
-        metadata: Dict[str, Any],
+        participant: Optional[Union[Dict[str, Any], Participant]],
+        response: TranscriptResponse,
     ):
         """
         Emit a partial transcript event with structured data.
 
         Args:
             text: The partial transcribed text.
-            user_metadata: User-specific metadata.
-            metadata: Transcription metadata (processing time, confidence, etc.).
+            participant: Participant metadata.
+            response: Transcription response metadata.
         """
         self.events.send(events.STTPartialTranscriptEvent(
             session_id=self.session_id,
             plugin_name=self.provider_name,
             text=text,
-            user_metadata=user_metadata,
-            confidence=metadata.get("confidence"),
-            language=metadata.get("language"),
-            processing_time_ms=metadata.get("processing_time_ms"),
-            audio_duration_ms=metadata.get("audio_duration_ms"),
-            model_name=metadata.get("model_name"),
-            words=metadata.get("words"),
+            user_metadata=participant,
+            response=response,
         ))
 
     def _emit_error_event(
         self,
         error: Exception,
         context: str = "",
-        user_metadata: Optional[Union[Dict[str, Any], Participant]] = None,
+        participant: Optional[Union[Dict[str, Any], Participant]] = None,
     ):
         """
         Emit an error event. Note this should only be emitted for temporary errors.
@@ -103,7 +94,7 @@ class STT(abc.ABC):
             plugin_name=self.provider_name,
             error=error,
             context=context,
-            user_metadata=user_metadata,
+            user_metadata=participant,
             error_code=getattr(error, "error_code", None),
             is_recoverable=not isinstance(error, (SystemExit, KeyboardInterrupt)),
         ))

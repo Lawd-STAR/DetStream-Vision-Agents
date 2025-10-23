@@ -16,8 +16,8 @@ from torchvision.io.video import av
 from vision_agents.core.edge.types import PcmData
 from vision_agents.core.stt.events import STTTranscriptEvent, STTErrorEvent
 
-
 load_dotenv()
+
 
 class STTSession:
     """Helper class for testing STT implementations.
@@ -65,6 +65,14 @@ class STTSession:
         
         # Wait for an event
         await asyncio.wait_for(self._event.wait(), timeout=timeout)
+    
+    def get_full_transcript(self) -> str:
+        """Get full transcription text from all transcript events.
+        
+        Returns:
+            Combined text from all transcripts
+        """
+        return " ".join(t.text for t in self.transcripts)
 
 
 def get_assets_dir():

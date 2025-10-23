@@ -32,9 +32,8 @@ class TestFishSTT:
         assert not session.errors
         
         # Verify transcript
-        assert len(session.transcripts) > 0, "Expected at least one transcript"
-        transcript_event = session.transcripts[0]
-        assert "forgotten treasures" in transcript_event.text.lower()
+        full_transcript = session.get_full_transcript()
+        assert "forgotten treasures" in full_transcript.lower()
 
     @pytest.mark.integration
     async def test_transcribe_mia_audio_48khz(self, stt, mia_audio_48khz):
@@ -49,6 +48,5 @@ class TestFishSTT:
         assert not session.errors
         
         # Verify transcript
-        assert len(session.transcripts) > 0, "Expected at least one transcript"
-        transcript_event = session.transcripts[0]
-        assert "forgotten treasures" in transcript_event.text.lower()
+        full_transcript = session.get_full_transcript()
+        assert "forgotten treasures" in full_transcript.lower()

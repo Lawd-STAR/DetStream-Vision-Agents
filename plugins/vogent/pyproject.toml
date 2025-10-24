@@ -12,8 +12,9 @@ license = "MIT"
 dependencies = [
     "vision-agents",
     "vogent-turn>=0.1.0",
-    "numpy>=2.2.6,<2.3",
 ]
+
+
 
 [project.urls]
 Documentation = "https://visionagents.ai/"
@@ -32,10 +33,12 @@ include = ["/vision_agents"]
 
 [tool.uv.sources]
 vision-agents = { workspace = true }
+vision-agents-plugins-deepgram = { workspace = true }
 
 [dependency-groups]
 dev = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.0.0",
+    "vision-agents-plugins-deepgram",
 ]
 

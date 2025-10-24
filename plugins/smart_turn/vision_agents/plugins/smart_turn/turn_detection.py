@@ -18,6 +18,9 @@ import fal_client
 import numpy as np
 from getstream.audio.utils import resample_audio
 from getstream.video.rtc.track_util import PcmData
+
+from vision_agents.core.agents import Conversation
+from vision_agents.core.edge.types import Participant
 from vision_agents.core.utils.utils import to_mono
 from vision_agents.core.turn_detection.turn_detection import (
     TurnDetector,
@@ -101,27 +104,16 @@ class TurnDetection(TurnDetector):
             )
             return 1
 
-    def is_detecting(self) -> bool:
-        """Check if turn detection is currently active."""
-        return self._is_detecting
-
     async def process_audio(
         self,
         audio_data: PcmData,
-        user_id: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        participant: Optional[Participant],
+        metadata: Optional[Conversation] = None,
     ) -> None:
-        """
-        Process incoming audio data for turn detection.
-
-        Args:
-            audio_data: PCM audio data from Stream
-            user_id: ID of the user speaking
-            metadata: Optional metadata about the audio
-        """
-        if not self.is_detecting():
+        if not self.is_active:
             return
 
+        user_id = participant.user_id
         # Validate sample format
         valid_formats = ["int16", "s16", "pcm_s16le"]
         if audio_data.format not in valid_formats:
@@ -146,11 +138,7 @@ class TurnDetection(TurnDetector):
             return
 
         # Infer number of channels (default to mono)
-        num_channels = (
-            metadata.get("channels", self._infer_channels(audio_data.format))
-            if metadata
-            else self._infer_channels(audio_data.format)
-        )
+        num_channels = 1
         if num_channels != 1:
             self.logger.debug(f"Converting {num_channels}-channel audio to mono")
             try:
@@ -345,18 +333,9 @@ class TurnDetection(TurnDetector):
                 f"Error processing turn prediction for {user_id}: {e}", exc_info=True
             )
 
-    def start(self) -> None:
-        """Start turn detection."""
-        if self._is_detecting:
-            return
-        self._is_detecting = True
-        self.logger.info("Smart Turn detection started")
 
     def stop(self) -> None:
-        """Stop turn detection and clean up."""
-        if not self._is_detecting:
-            return
-        self._is_detecting = False
+        super().stop()
 
         # Cancel any running processing tasks
         for task in self._processing_tasks.values():

@@ -19,6 +19,8 @@ from vision_agents.core.turn_detection.turn_detection import (
     TurnEvent,
     TurnEventData,
 )
+from vision_agents.core.edge.types import Participant
+from vision_agents.core.agents.conversation import Conversation
 from vogent_turn import TurnDetector as VogentTurnDetector
 
 
@@ -36,10 +38,10 @@ class TurnDetection(TurnDetector):
     2. Processes audio chunks through the Vogent Turn model
     3. Emits turn events based on model predictions
     4. Manages turn state based on predictions
-
-    Note: Currently uses placeholder text context (prev_line, curr_line).
-    TODO: Integrate with STT for real-time transcription context.
     """
+
+    def start(self) -> None:
+        pass
 
     def __init__(
         self,
@@ -79,6 +81,7 @@ class TurnDetection(TurnDetector):
         # Audio buffering per user
         self._user_buffers: Dict[str, bytearray] = {}
         self._user_last_audio: Dict[str, float] = {}
+        self._user_conversations: Dict[str, Optional[Conversation]] = {}
         self._current_speaker: Optional[str] = None
 
         # Processing state
@@ -102,26 +105,24 @@ class TurnDetection(TurnDetector):
             )
             return 1
 
-    def is_detecting(self) -> bool:
-        """Check if turn detection is currently active."""
-        return self._is_detecting
-
     async def process_audio(
         self,
         audio_data: PcmData,
-        user_id: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        participant: Participant,
+        conversation: Optional[Conversation],
     ) -> None:
         """
         Process incoming audio data for turn detection.
 
         Args:
             audio_data: PCM audio data from Stream
-            user_id: ID of the user speaking
-            metadata: Optional metadata about the audio
+            participant: Participant that's speaking, includes user data
+            conversation: Transcription/ chat history, sometimes useful for turn detection
         """
-        if not self.is_detecting():
+        if not self.is_active:
             return
+
+        user_id = participant.user_id
 
         # Validate sample format
         valid_formats = ["int16", "s16", "pcm_s16le"]
@@ -147,11 +148,7 @@ class TurnDetection(TurnDetector):
             return
 
         # Infer number of channels (default to mono)
-        num_channels = (
-            metadata.get("channels", self._infer_channels(audio_data.format))
-            if metadata
-            else self._infer_channels(audio_data.format)
-        )
+        num_channels = self._infer_channels(audio_data.format)
         if num_channels != 1:
             self.logger.debug(f"Converting {num_channels}-channel audio to mono")
             try:
@@ -163,6 +160,7 @@ class TurnDetection(TurnDetector):
         # Initialize buffer for new user
         self._user_buffers.setdefault(user_id, bytearray())
         self._user_last_audio[user_id] = time.time()
+        self._user_conversations[user_id] = conversation
 
         # Convert samples to bytes and append to buffer
         self._user_buffers[user_id].extend(samples.tobytes())
@@ -212,12 +210,32 @@ class TurnDetection(TurnDetector):
                 f"Processing {len(audio_float32)} audio samples for user {user_id}"
             )
 
+            # Extract last 2 messages from conversation for context
+            prev_line = ""
+            curr_line = ""
+            conversation = self._user_conversations.get(user_id)
+            if conversation and conversation.messages:
+                # Get messages for this user, sorted by timestamp
+                user_messages = [
+                    m for m in conversation.messages 
+                    if m.user_id == user_id and m.content
+                ]
+                if len(user_messages) >= 2:
+                    prev_line = user_messages[-2].content
+                    curr_line = user_messages[-1].content
+                elif len(user_messages) == 1:
+                    curr_line = user_messages[-1].content
+
             # Run prediction in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None,
-                self._run_vogent_prediction,
+                self.vogent_detector.predict,
                 audio_float32,
+                prev_line,
+                curr_line,
+                self.sample_rate,
+                True,  # return_probs
             )
 
             await self._process_turn_prediction(user_id, result)
@@ -226,27 +244,6 @@ class TurnDetection(TurnDetector):
             self.logger.error(
                 f"Error processing audio for user {user_id}: {e}", exc_info=True
             )
-
-    def _run_vogent_prediction(self, audio: np.ndarray) -> Dict[str, Any]:
-        """
-        Run Vogent Turn prediction synchronously.
-
-        Args:
-            audio: Float32 audio array normalized to [-1, 1]
-
-        Returns:
-            Prediction result dictionary
-        """
-        # TODO: Replace with actual conversation context from STT
-        # For now, use empty strings as placeholders
-        result = self.vogent_detector.predict(
-            audio,
-            prev_line="",  # TODO: Get from conversation history
-            curr_line="",  # TODO: Get from ongoing STT transcription
-            sample_rate=self.sample_rate,
-            return_probs=True,
-        )
-        return result
 
     async def _process_turn_prediction(
         self, user_id: str, result: Dict[str, Any]
@@ -319,19 +316,7 @@ class TurnDetection(TurnDetector):
                 f"Error processing turn prediction for {user_id}: {e}", exc_info=True
             )
 
-    def start(self) -> None:
-        """Start turn detection."""
-        if self._is_detecting:
-            return
-        self._is_detecting = True
-        self.logger.info("Vogent Turn detection started")
-
     def stop(self) -> None:
-        """Stop turn detection and clean up."""
-        if not self._is_detecting:
-            return
-        self._is_detecting = False
-
         # Cancel any running processing tasks
         for task in self._processing_tasks.values():
             if not task.done():
@@ -343,6 +328,7 @@ class TurnDetection(TurnDetector):
             buffer.clear()
         self._user_buffers.clear()
         self._user_last_audio.clear()
+        self._user_conversations.clear()
         self._current_speaker = None
 
         self.logger.info("Vogent Turn detection stopped")

@@ -163,6 +163,7 @@ class Agent:
         self._track_tasks: Dict[str, asyncio.Task] = {}
         # Track metadata: track_id -> (track_type, participant, forwarder)
         self._active_video_tracks: Dict[str, tuple[int, Any, Any]] = {}
+        self._video_forwarders: List[VideoForwarder] = []
         self._current_video_track_id: Optional[str] = None
         self._connection: Optional[Connection] = None
         self._audio_track: Optional[aiortc.AudioStreamTrack] = None
@@ -805,8 +806,6 @@ class Agent:
             self.logger.info("🎥 Created raw VideoForwarder for track %s", track_id)
 
             # Track forwarders for cleanup
-            if not hasattr(self, "_video_forwarders"):
-                self._video_forwarders = []
             self._video_forwarders.append(raw_forwarder)
 
             # Store track metadata

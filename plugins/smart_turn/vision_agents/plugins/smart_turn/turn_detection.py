@@ -107,7 +107,7 @@ class TurnDetection(TurnDetector):
     async def process_audio(
         self,
         audio_data: PcmData,
-        participant: Optional[Participant],
+        participant: Participant,
         conversation: Optional[Conversation] = None,
     ) -> None:
         if not self.is_active:

@@ -33,8 +33,6 @@ async def start_agent() -> None:
     # Create a call
     call = agent.edge.client.video.call("default", str(uuid4()))
 
-
-
     # Have the agent join the call/room
     with await agent.join(call):
         # Example 1: standardized simple response
@@ -50,13 +48,15 @@ async def start_agent() -> None:
         #     }
         # ],)
 
-        # run till the call ends
         # await agent.say("Hello, how are you?")
         # await asyncio.sleep(5)
+
         # Open the demo UI
         await agent.edge.open_demo(call)
 
         await agent.simple_response("tell me something interesting in a short sentence")
+
+        # run till the call ends
         await agent.finish()
 
 

@@ -7,7 +7,6 @@ import pytest
 
 from plugins.deepgram.vision_agents.plugins import deepgram
 from plugins.vogent.vision_agents.plugins.vogent import TurnDetection
-from vision_agents.core.agents import Conversation
 from vision_agents.core.agents.conversation import InMemoryConversation
 from vision_agents.core.edge.types import Participant
 from vision_agents.core.stt.events import STTTranscriptEvent, STTPartialTranscriptEvent
@@ -51,7 +50,7 @@ class TestVogentTurn:
 
         # Process each 20ms audio chunk
         for chunk in mia_audio_48khz_chunked:
-            logger.info(f"Chunk: .")
+            logger.info("Chunk: .")
             await stt.process_audio(chunk, participant)
             await td.process_audio(chunk, participant, conversation)
 

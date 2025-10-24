@@ -108,7 +108,7 @@ class TurnDetection(TurnDetector):
         self,
         audio_data: PcmData,
         participant: Optional[Participant],
-        metadata: Optional[Conversation] = None,
+        conversation: Optional[Conversation] = None,
     ) -> None:
         if not self.is_active:
             return

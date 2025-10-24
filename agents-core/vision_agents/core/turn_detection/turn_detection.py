@@ -1,11 +1,10 @@
-from typing import Optional, Dict, Any, Callable, Protocol
+from typing import Optional, Dict, Any, Callable
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 import uuid
 from getstream.video.rtc.track_util import PcmData
 from vision_agents.core.events.manager import EventManager
-from vision_agents.core.events import PluginInitializedEvent
 from . import events
 from ..agents.conversation import Conversation
 from ..edge.types import Participant

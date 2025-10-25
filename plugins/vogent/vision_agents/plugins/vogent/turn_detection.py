@@ -11,9 +11,8 @@ import time
 from typing import Dict, Optional, Any
 
 import numpy as np
-from getstream.audio.utils import resample_audio
 from getstream.video.rtc.track_util import PcmData
-from vision_agents.core.utils.utils import to_mono
+
 from vision_agents.core.turn_detection.turn_detection import (
     TurnDetector,
     TurnEvent,
@@ -22,11 +21,6 @@ from vision_agents.core.turn_detection.turn_detection import (
 from vision_agents.core.edge.types import Participant
 from vision_agents.core.agents.conversation import Conversation
 from vogent_turn import TurnDetector as VogentTurnDetector
-
-
-def _resample(samples: np.ndarray) -> np.ndarray:
-    """Resample audio from 48 kHz to 16 kHz."""
-    return resample_audio(samples, 48000, 16000).astype(np.int16)
 
 
 class TurnDetection(TurnDetector):
@@ -64,7 +58,8 @@ class TurnDetection(TurnDetector):
             compile_model: Use torch.compile for faster inference
         """
         super().__init__(
-            confidence_threshold=confidence_threshold, provider_name="VogentTurnDetection"
+            confidence_threshold=confidence_threshold,
+            provider_name="VogentTurnDetection",
         )
         self.logger = logging.getLogger("VogentTurnDetection")
         self.buffer_duration = buffer_duration
@@ -100,9 +95,7 @@ class TurnDetection(TurnDetector):
         elif any(f in format_str for f in ["mono", "s16", "int16", "pcm_s16le"]):
             return 1
         else:
-            self.logger.warning(
-                f"Unknown format string: {format_str}. Assuming mono."
-            )
+            self.logger.warning(f"Unknown format string: {format_str}. Assuming mono.")
             return 1
 
     async def process_audio(
@@ -140,22 +133,8 @@ class TurnDetection(TurnDetector):
             )
             return
 
-        # Resample from 48 kHz to 16 kHz
-        try:
-            samples = _resample(audio_data.samples)
-        except Exception as e:
-            self.logger.error(f"Failed to resample audio: {e}")
-            return
-
-        # Infer number of channels (default to mono)
-        num_channels = self._infer_channels(audio_data.format)
-        if num_channels != 1:
-            self.logger.debug(f"Converting {num_channels}-channel audio to mono")
-            try:
-                samples = to_mono(samples, num_channels)
-            except ValueError as e:
-                self.logger.error(f"Failed to convert to mono: {e}")
-                return
+        # Resample to 16 kHz mono
+        samples = audio_data.resample(16_000, 1).samples
 
         # Initialize buffer for new user
         self._user_buffers.setdefault(user_id, bytearray())
@@ -167,6 +146,7 @@ class TurnDetection(TurnDetector):
 
         # Process audio if buffer is large enough and no task is running
         buffer_size = len(self._user_buffers[user_id])
+        # TODO build a utility function for this so its a bit less error-prone
         required_bytes = int(
             self.buffer_duration * self.sample_rate * 2
         )  # 2 bytes per int16 sample
@@ -217,7 +197,8 @@ class TurnDetection(TurnDetector):
             if conversation and conversation.messages:
                 # Get messages for this user, sorted by timestamp
                 user_messages = [
-                    m for m in conversation.messages 
+                    m
+                    for m in conversation.messages
                     if m.user_id == user_id and m.content
                 ]
                 if len(user_messages) >= 2:
@@ -332,4 +313,3 @@ class TurnDetection(TurnDetector):
         self._current_speaker = None
 
         self.logger.info("Vogent Turn detection stopped")
-

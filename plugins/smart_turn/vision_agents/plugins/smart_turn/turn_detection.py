@@ -1,6 +1,4 @@
-
 import asyncio
-import base64
 import io
 import logging
 import os
@@ -12,22 +10,15 @@ from typing import Dict, Optional, Any
 
 import fal_client
 import numpy as np
-from getstream.audio.utils import resample_audio
 from getstream.video.rtc.track_util import PcmData
 
 from vision_agents.core.agents import Conversation
 from vision_agents.core.edge.types import Participant
-from vision_agents.core.utils.utils import to_mono
 from vision_agents.core.turn_detection.turn_detection import (
     TurnDetector,
     TurnEvent,
     TurnEventData,
 )
-
-
-def _resample(samples: np.ndarray) -> np.ndarray:
-    """Resample audio from 48 kHz to 16 kHz."""
-    return resample_audio(samples, 48000, 16000).astype(np.int16)
 
 
 class TurnDetection(TurnDetector):
@@ -40,7 +31,7 @@ class TurnDetection(TurnDetector):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        buffer_in_seconds: float = 2.0, # seconds
+        buffer_in_seconds: float = 2.0,  # seconds
         confidence_threshold: float = 0.5,
         sample_rate: int = 16000,
         channels: int = 1,
@@ -57,7 +48,8 @@ class TurnDetection(TurnDetector):
         """
 
         super().__init__(
-            confidence_threshold=confidence_threshold, provider_name="SmartTurnDetection"
+            confidence_threshold=confidence_threshold,
+            provider_name="SmartTurnDetection",
         )
         self.logger = logging.getLogger("SmartTurnDetection")
         self.api_key = api_key
@@ -135,8 +127,8 @@ class TurnDetection(TurnDetector):
             )
             return
 
-        # Resample from 48 kHz to 16 kHz
-        samples = _resample(audio_data.samples)
+        # Resample to 16 kHz mono
+        samples = audio_data.resample(16_000, 1).samples
 
         # Initialize buffer for new user
         self._user_buffers.setdefault(user_id, [])
@@ -153,14 +145,14 @@ class TurnDetection(TurnDetector):
             # Extract the data from buffer immediately, before spawning the task
             # This allows the buffer to accumulate more data while the task processes
             audio_buffer = self._user_buffers[user_id]
-            
+
             # Collect samples until we have enough
             process_chunks = []
             samples_collected = 0
             while audio_buffer and samples_collected < required_samples:
                 chunk = audio_buffer.pop(0)
                 samples_needed = required_samples - samples_collected
-                
+
                 if len(chunk) <= samples_needed:
                     # Use the entire chunk
                     process_chunks.append(chunk)
@@ -170,14 +162,16 @@ class TurnDetection(TurnDetector):
                     process_chunks.append(chunk[:samples_needed])
                     audio_buffer.insert(0, chunk[samples_needed:])
                     samples_collected += samples_needed
-            
+
             # Concatenate all chunks into a single array
             process_samples = np.concatenate(process_chunks)
-            
+
             # Put in queue for ordered processing by worker task
             await self._processing_queue.put((user_id, process_samples))
 
-    async def _process_extracted_audio(self, user_id: str, process_samples: np.ndarray) -> None:
+    async def _process_extracted_audio(
+        self, user_id: str, process_samples: np.ndarray
+    ) -> None:
         """
         Process extracted audio samples for a specific user through FAL API.
 
@@ -188,17 +182,21 @@ class TurnDetection(TurnDetector):
         try:
             # Create WAV in memory
             wav_bytes = self._create_wav_bytes(process_samples)
-            
+
             # Save to temporary file for upload
-            temp_file = self._temp_dir / f"audio_{user_id}_{int(time.time() * 1000)}.wav"
+            temp_file = (
+                self._temp_dir / f"audio_{user_id}_{int(time.time() * 1000)}.wav"
+            )
             temp_file.write_bytes(wav_bytes)
-            
+
             try:
                 # Upload file to FAL CDN
                 # Note: We tried encode_file() for data URIs but the smart-turn API
                 # returns 500 errors when processing them, so we use file upload instead
                 audio_url = await fal_client.upload_file_async(str(temp_file))
-                self.logger.debug(f"Uploaded audio file for user {user_id}: {audio_url}")
+                self.logger.debug(
+                    f"Uploaded audio file for user {user_id}: {audio_url}"
+                )
 
                 # Submit to smart-turn model
                 handler = await fal_client.submit_async(
@@ -213,7 +211,9 @@ class TurnDetection(TurnDetector):
                 try:
                     temp_file.unlink()
                 except Exception as e:
-                    self.logger.warning(f"Failed to clean up temp file {temp_file}: {e}")
+                    self.logger.warning(
+                        f"Failed to clean up temp file {temp_file}: {e}"
+                    )
 
         except Exception as e:
             self.logger.error(
@@ -232,17 +232,19 @@ class TurnDetection(TurnDetector):
         """
         # Create WAV file in memory
         wav_buffer = io.BytesIO()
-        
+
         with wave.open(wav_buffer, "wb") as wav_file:
             wav_file.setnchannels(self.channels)
             wav_file.setsampwidth(2)  # 16-bit audio
             wav_file.setframerate(self.sample_rate)
             wav_file.writeframes(samples.tobytes())
-        
+
         # Get the WAV bytes
         wav_bytes = wav_buffer.getvalue()
-        
-        self.logger.debug(f"Created WAV bytes ({len(samples)} samples, {len(wav_bytes)} bytes)")
+
+        self.logger.debug(
+            f"Created WAV bytes ({len(samples)} samples, {len(wav_bytes)} bytes)"
+        )
         return wav_bytes
 
     async def _process_turn_prediction(
@@ -314,7 +316,6 @@ class TurnDetection(TurnDetector):
                 f"Error processing turn prediction for {user_id}: {e}", exc_info=True
             )
 
-
     def stop(self) -> None:
         """Stop turn detection and clean up resources."""
         super().stop()
@@ -347,4 +348,3 @@ class TurnDetection(TurnDetector):
             self.logger.warning(f"Failed to clean up temp files: {e}")
 
         self.logger.info("Smart Turn detection stopped")
-

@@ -6,7 +6,6 @@ import asyncio
 
 import krisp_audio
 import numpy as np
-from getstream.audio.utils import resample_audio
 from getstream.video.rtc.track_util import PcmData
 from vision_agents.core.agents import Conversation
 from vision_agents.core.edge.types import Participant
@@ -17,7 +16,6 @@ from vision_agents.core.turn_detection import (
     TurnEvent,
     TurnEventData,
 )
-from vision_agents.core.utils.utils import to_mono
 
 
 def _int_to_frame_duration(frame_dur: int):
@@ -30,11 +28,6 @@ def _int_to_frame_duration(frame_dur: int):
         32: krisp_audio.FrameDuration.Fd32ms,
     }
     return durations[frame_dur]
-
-
-def _resample(samples: np.ndarray) -> np.ndarray:
-    """Resample audio from 48 kHz to 16 kHz."""
-    return resample_audio(samples, 48000, 16000).astype(np.int16)
 
 
 def log_callback(log_message, log_level):
@@ -50,7 +43,7 @@ class TurnDetection(TurnDetector):
     ):
         super().__init__(
             confidence_threshold=confidence_threshold,
-            provider_name="KrispTurnDetection"
+            provider_name="KrispTurnDetection",
         )
         self.logger = logging.getLogger("KrispTurnDetection")
         self.model_path = model_path
@@ -97,7 +90,7 @@ class TurnDetection(TurnDetector):
         if self._krisp_instance is None:
             self.logger.error("Krisp instance is not initialized. Call start() first.")
             return
-        
+
         user_id = participant.user_id
         metadata = None  # Can be extended if needed from participant/conversation
 
@@ -117,36 +110,8 @@ class TurnDetection(TurnDetector):
             )
             return
 
-        # Resample from 48 kHz to 16 kHz
-        try:
-            samples = _resample(audio_data.samples)
-        except Exception as e:
-            self.logger.error(f"Failed to resample audio: {e}")
-            return
-
-        # Infer number of channels (default to mono)
-        num_channels = (
-            metadata.get("channels", self._infer_channels(audio_data.format))
-            if metadata
-            else self._infer_channels(audio_data.format)
-        )
-        if num_channels != 1:
-            self.logger.debug(f"Converting {num_channels}-channel audio to mono")
-            try:
-                samples = to_mono(samples, num_channels)
-            except ValueError as e:
-                self.logger.error(f"Failed to convert to mono: {e}")
-                return
-
-        # Create a new PcmData object with resampled data
-        resampled_pcm = PcmData(
-            format=audio_data.format,
-            sample_rate=16000,
-            samples=samples,
-            pts=audio_data.pts,
-            dts=audio_data.dts,
-            time_base=audio_data.time_base,
-        )
+        # Resample to 16 kHz mono
+        resampled_pcm = audio_data.resample(16_000, 1).samples
 
         try:
             loop = asyncio.get_event_loop()

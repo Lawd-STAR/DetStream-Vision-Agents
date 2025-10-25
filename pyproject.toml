@@ -13,7 +13,6 @@ vision-agents-plugins-fal = { workspace = true }
 vision-agents-plugins-fish = { workspace = true }
 vision-agents-plugins-gemini = { workspace = true }
 vision-agents-plugins-kokoro = { workspace = true }
-vision-agents-plugins-moonshine = { workspace = true }
 vision-agents-plugins-openai = { workspace = true }
 vision-agents-plugins-openrouter = { workspace = true }
 vision-agents-plugins-silero = { workspace = true }
@@ -43,7 +42,6 @@ members = [
     "plugins/fish",
     "plugins/gemini",
     "plugins/kokoro",
-    "plugins/moonshine",
     "plugins/openai",
     "plugins/openrouter",
     "plugins/silero",

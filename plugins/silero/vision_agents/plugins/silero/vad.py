@@ -12,7 +12,6 @@ from vision_agents.core import vad
 from vision_agents.core.vad.events import VADSpeechStartEvent
 
 from getstream.video.rtc.track_util import PcmData
-from getstream.audio.utils import resample_audio
 
 from vision_agents.core.events import AudioFormat
 
@@ -126,11 +125,8 @@ class VAD(vad.VAD):
             )
             self.window_samples = 256
 
-        # Buffer for raw input samples (before resampling)
-        self._raw_buffer = np.array([], dtype=np.float32)
-
-        # Buffer for resampled samples at model rate
-        self._resampled = np.array([], dtype=np.float32)
+        # Buffered audio at model rate (mono), accumulated across calls
+        self._buffered_audio: Optional[PcmData] = None
 
         # ONNX session and model
         self.onnx_session: Optional["ort.InferenceSession"] = None
@@ -284,9 +280,8 @@ class VAD(vad.VAD):
 
     def reset_states(self) -> None:
         """Reset the model states."""
-        # Clear buffers
-        self._raw_buffer = np.array([], dtype=np.float32)
-        self._resampled = np.array([], dtype=np.float32)
+        # Clear buffered PcmData
+        self._buffered_audio = None
 
     async def is_speech(self, frame: PcmData) -> float:
         """
@@ -299,43 +294,46 @@ class VAD(vad.VAD):
             Probability (0.0 to 1.0) that the frame contains speech
         """
         try:
-            # Convert PCM data to float32 in range [-1.0, 1.0]
-            audio_array = frame.samples.astype(np.float32) / 32768.0
-
-            # Add current frame to raw buffer (in original sample rate)
-            self._raw_buffer = np.append(self._raw_buffer, audio_array)
-
-            # Resample the accumulated raw buffer to model rate if needed
-            if frame.sample_rate != self.model_rate:
-                resampled_new = resample_audio(
-                    self._raw_buffer, frame.sample_rate, self.model_rate
-                )
-                # Reset raw buffer after resampling
-                self._raw_buffer = np.array([], dtype=np.float32)
+            # Resample incoming frame to model rate mono and append to buffer
+            frame_model = frame.resample(self.model_rate, 1)
+            if self._buffered_audio is None:
+                self._buffered_audio = frame_model
             else:
-                resampled_new = self._raw_buffer
-                self._raw_buffer = np.array([], dtype=np.float32)
-
-            # Add newly resampled data to existing resampled buffer
-            self._resampled = np.append(self._resampled, resampled_new)
+                self._buffered_audio = self._buffered_audio.append(frame_model)
 
             # If we don't have enough samples for a full window, return 0
-            if len(self._resampled) < self.window_samples:
+            if (
+                self._buffered_audio is None
+                or len(self._buffered_audio.samples) < self.window_samples
+            ):
                 return 0.0
 
             # Process full windows of audio
             speech_probs = []
 
             # Process each complete window (512 samples @ 16kHz or 256 @ 8kHz)
-            while len(self._resampled) >= self.window_samples:
-                # Extract a window of samples
-                window = self._resampled[: self.window_samples]
-                self._resampled = self._resampled[self.window_samples :]
+            while (
+                self._buffered_audio is not None
+                and len(self._buffered_audio.samples) >= self.window_samples
+            ):
+                # Extract a window of samples (mono)
+                window_i16 = self._buffered_audio.samples[: self.window_samples]
+                # Update buffer to remaining samples
+                remainder = self._buffered_audio.samples[self.window_samples :]
+                self._buffered_audio = (
+                    PcmData(
+                        samples=remainder, sample_rate=self.model_rate, format="s16"
+                    )
+                    if remainder.size > 0
+                    else None
+                )
 
                 # Measure inference time for RTF calculation
                 start_time = time.time()
 
                 try:
+                    # Convert to the format expected by the model (float32 in [-1, 1])
+                    window = window_i16.astype(np.float32) / 32768.0
                     if self.use_onnx and self.onnx_session is not None:
                         # Convert to the format expected by ONNX (batch_size, sequence_length)
                         onnx_input = window.reshape(1, -1).astype(np.float32)
@@ -375,19 +373,21 @@ class VAD(vad.VAD):
                     # Update current speech probability
                     self._current_speech_probability = speech_prob
 
-                    self.events.send(vad.events.VADInferenceEvent(
-                        session_id=self.session_id,
-                        plugin_name=self.provider_name,
-                        speech_probability=speech_prob,
-                        inference_time_ms=inference_time,
-                        window_samples=self.window_samples,
-                        model_rate=self.model_rate,
-                        real_time_factor=rtf,
-                        is_speech_active=self.is_speech_active,
-                        accumulated_speech_duration_ms=self._get_accumulated_speech_duration(),
-                        accumulated_silence_duration_ms=self._get_accumulated_silence_duration(),
-                        user_metadata=None,  # Will be set by caller if needed
-                    ))
+                    self.events.send(
+                        vad.events.VADInferenceEvent(
+                            session_id=self.session_id,
+                            plugin_name=self.provider_name,
+                            speech_probability=speech_prob,
+                            inference_time_ms=inference_time,
+                            window_samples=self.window_samples,
+                            model_rate=self.model_rate,
+                            real_time_factor=rtf,
+                            is_speech_active=self.is_speech_active,
+                            accumulated_speech_duration_ms=self._get_accumulated_speech_duration(),
+                            accumulated_silence_duration_ms=self._get_accumulated_silence_duration(),
+                            user_metadata=None,  # Will be set by caller if needed
+                        )
+                    )
 
                     # Log speech probability and RTF at DEBUG level
                     logger.debug(
@@ -414,7 +414,9 @@ class VAD(vad.VAD):
             # On error, return low probability
             return 0.0
 
-    async def _flush_speech_buffer(self, user: Optional[Union[Dict[str, Any], "Participant"]] = None) -> None:
+    async def _flush_speech_buffer(
+        self, user: Optional[Union[Dict[str, Any], "Participant"]] = None
+    ) -> None:
         """
         Flush the accumulated speech buffer if it meets minimum length requirements.
 
@@ -440,31 +442,35 @@ class VAD(vad.VAD):
             # Calculate average speech probability during this segment
             avg_speech_prob = self._get_avg_speech_probability()
 
-            self.events.send(vad.events.VADAudioEvent(
-                session_id=self.session_id,
-                plugin_name=self.provider_name,
-                audio_data=speech_data.tobytes(),
-                sample_rate=self.sample_rate,
-                audio_format=vad.events.AudioFormat.PCM_S16,
-                channels=1,
-                duration_ms=duration_ms,
-                speech_probability=avg_speech_prob,
-                frame_count=len(speech_data) // self.frame_size,
-                user_metadata=user,
-            ))
+            self.events.send(
+                vad.events.VADAudioEvent(
+                    session_id=self.session_id,
+                    plugin_name=self.provider_name,
+                    audio_data=speech_data.tobytes(),
+                    sample_rate=self.sample_rate,
+                    audio_format=vad.events.AudioFormat.PCM_S16,
+                    channels=1,
+                    duration_ms=duration_ms,
+                    speech_probability=avg_speech_prob,
+                    frame_count=len(speech_data) // self.frame_size,
+                    user_metadata=user,
+                )
+            )
 
         # Emit speech end event if we were actively detecting speech
         if self.is_speech_active and self._speech_start_time:
             total_speech_duration = (time.time() - self._speech_start_time) * 1000
-            self.events.send(vad.events.VADSpeechEndEvent(
-                session_id=self.session_id,
-                plugin_name=self.provider_name,
-                speech_probability=self._speech_end_probability,
-                deactivation_threshold=self.deactivation_th,
-                total_speech_duration_ms=total_speech_duration,
-                total_frames=self.total_speech_frames,
-                user_metadata=user,
-            ))
+            self.events.send(
+                vad.events.VADSpeechEndEvent(
+                    session_id=self.session_id,
+                    plugin_name=self.provider_name,
+                    speech_probability=self._speech_end_probability,
+                    deactivation_threshold=self.deactivation_th,
+                    total_speech_duration_ms=total_speech_duration,
+                    total_frames=self.total_speech_frames,
+                    user_metadata=user,
+                )
+            )
 
         # Reset state variables
         self.speech_buffer = bytearray()
@@ -530,15 +536,17 @@ class VAD(vad.VAD):
             self._speech_start_probability = speech_prob
             self._speech_probabilities = [speech_prob]  # Reset probability tracking
 
-            self.events.send(VADSpeechStartEvent(
-                session_id=self.session_id,
-                plugin_name=self.provider_name,
-                speech_probability=speech_prob,
-                activation_threshold=self.activation_th,
-                frame_count=1,
-                user_metadata=user,
-                audio_data=frame
-            ))
+            self.events.send(
+                VADSpeechStartEvent(
+                    session_id=self.session_id,
+                    plugin_name=self.provider_name,
+                    speech_probability=speech_prob,
+                    activation_threshold=self.activation_th,
+                    frame_count=1,
+                    user_metadata=user,
+                    audio_data=frame,
+                )
+            )
 
             # Add this frame to the buffer using shared utility
             from getstream.audio.pcm_utils import numpy_array_to_bytes
@@ -568,19 +576,21 @@ class VAD(vad.VAD):
                 # Calculate current duration
                 current_duration_ms = (len(current_samples) / self.sample_rate) * 1000
 
-                self.events.send(vad.events.VADPartialEvent(
-                    session_id=self.session_id,
-                    plugin_name=self.provider_name,
-                    audio_data=current_bytes,
-                    sample_rate=self.sample_rate,
-                    audio_format=AudioFormat.PCM_S16,
-                    channels=1,
-                    duration_ms=current_duration_ms,
-                    speech_probability=speech_prob,
-                    frame_count=len(current_samples) // self.frame_size,
-                    is_speech_active=True,
-                    user_metadata=user,
-                ))
+                self.events.send(
+                    vad.events.VADPartialEvent(
+                        session_id=self.session_id,
+                        plugin_name=self.provider_name,
+                        audio_data=current_bytes,
+                        sample_rate=self.sample_rate,
+                        audio_format=AudioFormat.PCM_S16,
+                        channels=1,
+                        duration_ms=current_duration_ms,
+                        speech_probability=speech_prob,
+                        frame_count=len(current_samples) // self.frame_size,
+                        is_speech_active=True,
+                        user_metadata=user,
+                    )
+                )
 
                 self.partial_counter = 0
 

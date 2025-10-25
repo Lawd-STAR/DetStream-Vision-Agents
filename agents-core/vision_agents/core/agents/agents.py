@@ -5,7 +5,6 @@ import uuid
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
-import aiortc
 import getstream.models
 from aiortc import VideoStreamTrack
 from getstream.video.rtc import Call
@@ -32,6 +31,7 @@ from ..processors.base_processor import Processor, ProcessorType, filter_process
 from ..stt.events import STTTranscriptEvent, STTErrorEvent
 from ..stt.stt import STT
 from ..tts.tts import TTS
+from ..tts.events import TTSAudioEvent
 from ..turn_detection import TurnDetector, TurnStartedEvent, TurnEndedEvent
 from ..utils.video_forwarder import VideoForwarder
 from ..utils.video_utils import ensure_even_dimensions
@@ -166,7 +166,7 @@ class Agent:
         self._video_forwarders: List[VideoForwarder] = []
         self._current_video_track_id: Optional[str] = None
         self._connection: Optional[Connection] = None
-        self._audio_track: Optional[aiortc.AudioStreamTrack] = None
+        self._audio_track: Optional[OutputAudioTrack] = None
         self._video_track: Optional[VideoStreamTrack] = None
         self._realtime_connection = None
         self._pc_track_handler_attached: bool = False
@@ -312,6 +312,11 @@ class Agent:
                 replace=True,
                 original=event,
             )
+
+        @self.events.subscribe
+        async def _on_tts_audio_write_to_output(event: TTSAudioEvent):
+            if self._audio_track and event and event.audio_data is not None:
+                await self._audio_track.write(event.audio_data)
 
         @self.events.subscribe
         async def on_stt_transcript_event_create_response(event: STTTranscriptEvent):
@@ -1133,19 +1138,19 @@ class Agent:
                 self._audio_track = self.llm.output_track
                 self.logger.info("🎵 Using Realtime provider output track for audio")
             else:
-                # TODO: what if we want to transform audio...
-                # Get the required framerate and stereo setting from TTS plugin, default to 48000 for WebRTC
-                if self.tts:
-                    framerate = self.tts.get_required_framerate()
-                    stereo = self.tts.get_required_stereo()
-                else:
-                    framerate = 48000
-                    stereo = True  # Default to stereo for WebRTC
+                # Default to WebRTC-friendly format unless configured differently
+                framerate = 48000
+                stereo = True
                 self._audio_track = self.edge.create_audio_track(
                     framerate=framerate, stereo=stereo
                 )
+                # Inform TTS of desired output format so it can resample accordingly
                 if self.tts:
-                    self.tts.set_output_track(self._audio_track)
+                    channels = 2 if stereo else 1
+                    self.tts.set_output_format(
+                        sample_rate=framerate,
+                        channels=channels,
+                    )
 
         # Set up video track if video publishers are available
         if self.publish_video:

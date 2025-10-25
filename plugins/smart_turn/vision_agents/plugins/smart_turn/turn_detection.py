@@ -1,10 +1,8 @@
 import asyncio
-import io
 import logging
 import os
 import tempfile
 import time
-import wave
 from pathlib import Path
 from typing import Dict, Optional, Any
 
@@ -180,8 +178,11 @@ class TurnDetection(TurnDetector):
             process_samples: The audio samples (np.ndarray of int16) to process
         """
         try:
-            # Create WAV in memory
-            wav_bytes = self._create_wav_bytes(process_samples)
+            # Create WAV in memory using shared PcmData method
+            pcm = PcmData(
+                samples=process_samples, sample_rate=self.sample_rate, format="s16"
+            )
+            wav_bytes = pcm.to_wav_bytes()
 
             # Save to temporary file for upload
             temp_file = (
@@ -219,33 +220,6 @@ class TurnDetection(TurnDetector):
             self.logger.error(
                 f"Error processing audio for user {user_id}: {e}", exc_info=True
             )
-
-    def _create_wav_bytes(self, samples: np.ndarray) -> bytes:
-        """
-        Create WAV file bytes from audio samples.
-
-        Args:
-            samples: numpy array of int16 audio samples
-
-        Returns:
-            WAV file bytes
-        """
-        # Create WAV file in memory
-        wav_buffer = io.BytesIO()
-
-        with wave.open(wav_buffer, "wb") as wav_file:
-            wav_file.setnchannels(self.channels)
-            wav_file.setsampwidth(2)  # 16-bit audio
-            wav_file.setframerate(self.sample_rate)
-            wav_file.writeframes(samples.tobytes())
-
-        # Get the WAV bytes
-        wav_bytes = wav_buffer.getvalue()
-
-        self.logger.debug(
-            f"Created WAV bytes ({len(samples)} samples, {len(wav_bytes)} bytes)"
-        )
-        return wav_bytes
 
     async def _process_turn_prediction(
         self, user_id: str, result: Dict[str, Any]

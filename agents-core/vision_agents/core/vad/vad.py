@@ -254,7 +254,7 @@ class VAD(abc.ABC):
                 )
 
                 logger.debug(
-                    f"Emitted partial event with {len(current_samples)} samples"
+                    f"Emitted partial event with {current_samples_len} samples"
                 )
                 self.partial_counter = 0
 

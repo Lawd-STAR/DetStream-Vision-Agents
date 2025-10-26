@@ -167,7 +167,7 @@ class TurnDetection(TurnDetector):
                     # Emit deprecated event for backward compatibility
                     event_data = TurnEventData(
                         timestamp=time.time(),
-                        speaker_id=user_id,
+                        participant=user_id,
                         confidence=score,
                         custom=metadata or {},
                     )
@@ -186,7 +186,7 @@ class TurnDetection(TurnDetector):
                     # Emit deprecated event for backward compatibility
                     event_data = TurnEventData(
                         timestamp=time.time(),
-                        speaker_id=user_id,
+                        participant=user_id,
                         confidence=score,
                         custom=metadata or {},
                     )

@@ -250,7 +250,7 @@ class TurnDetection(TurnDetector):
             # Create event data
             event_data = TurnEventData(
                 timestamp=current_time,
-                speaker_id=user_id,
+                participant=user_id,
                 confidence=prob_endpoint,
                 custom={
                     "is_endpoint": is_endpoint,
@@ -283,7 +283,7 @@ class TurnDetection(TurnDetector):
                         # Previous speaker ended
                         prev_event_data = TurnEventData(
                             timestamp=current_time,
-                            speaker_id=self._current_speaker,
+                            participant=self._current_speaker,
                         )
                         self._emit_turn_event(TurnEvent.TURN_ENDED, prev_event_data)
 

@@ -14,7 +14,7 @@ from transformers import WhisperFeatureExtractor
 from vision_agents.core.agents import Conversation
 from vision_agents.core.edge.types import Participant
 
-from vision_agents.core.turn_detection import TurnDetector
+from vision_agents.core.turn_detection import TurnDetector, TurnEvent, TurnEventData, TurnStartedEvent, TurnEndedEvent
 
 SMART_TURN_ONNX_PATH = "smart-turn-v3.0.onnx"
 SMART_TURN_ONNX_URL = "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/smart-turn-v3.0.onnx"
@@ -56,7 +56,7 @@ class SmartTurnDetection(TurnDetector):
 
         self.vad = SileroVAD(SILERO_ONNX_PATH)
 
-    async def _process_segment(self, pcm: PcmData):
+    async def _process_segment(self, pcm: PcmData, participant: Participant):
         segment_audio_f32 = pcm.samples
         dur_sec = segment_audio_f32.size / RATE
         print(f"Processing segment ({dur_sec:.2f}s)...")
@@ -67,7 +67,7 @@ class SmartTurnDetection(TurnDetector):
 
         pred = result.get("prediction", 0)
         prob = result.get("probability", float("nan"))
-        # TODO: stop evnet here
+        self._emit_end_turn_event(TurnEndedEvent(participant=participant))
 
 
         print("--------")
@@ -97,7 +97,8 @@ class SmartTurnDetection(TurnDetector):
                 # Warmup pre-speech buffer until trigger
                 self.pre_buffer.append(f32)
                 if is_speech:
-                    # TODO: start event here
+                    # Start event here
+                    self._emit_start_turn_event(TurnStartedEvent(participant=participant))
                     # Trigger: start a new segment with pre-speech
                     self.segment = list(self.pre_buffer)
                     self.segment.append(f32)
@@ -119,7 +120,7 @@ class SmartTurnDetection(TurnDetector):
                     # Pause capture while we process
 
                     pcm_segment = PcmData(samples=np.concatenate(self.segment, dtype=np.float32), format="f32", sample_rate=16000)
-                    await self._process_segment(pcm_segment)
+                    await self._process_segment(pcm_segment, participant)
                     # Reset for next segment
                     # TODO: to method
                     self.speech_active = False
@@ -226,6 +227,8 @@ def predict_endpoint(pcm: PcmData):
     # ensure it's 16khz
     if pcm.sample_rate != 16000:
         raise ValueError("Only 16kHz audio samples are supported")
+    if pcm.format != "f32":
+        raise ValueError("Only f32 audio format is supported")
 
     feature_extractor = WhisperFeatureExtractor(chunk_length=8)
     session = build_session(SMART_TURN_ONNX_PATH)

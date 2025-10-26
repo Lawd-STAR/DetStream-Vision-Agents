@@ -33,12 +33,12 @@ async def main():
     # Register event handlers
     @detector.on("turn_started")
     def on_turn_started(event_data):
-        print(f"🎤 Turn started: {event_data.speaker_id}")
+        print(f"🎤 Turn started: {event_data.participant}")
     
     @detector.on("turn_ended")
     def on_turn_ended(event_data):
         print(
-            f"✅ Turn ended: {event_data.speaker_id} "
+            f"✅ Turn ended: {event_data.participant} "
             f"(confidence: {event_data.confidence:.3f})"
         )
         if event_data.custom:

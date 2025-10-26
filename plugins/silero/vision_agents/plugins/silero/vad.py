@@ -85,9 +85,12 @@ class VAD(vad.VAD):
             )
             window_samples = frame_size
 
+        # Base VAD expects model spec: sample_rate, window size, channels, format
         super().__init__(
-            sample_rate=sample_rate,
-            frame_size=window_samples,  # Use window_samples for frame_size
+            sample_rate=model_rate,
+            window_samples=window_samples,
+            channels=1,
+            audio_format=AudioFormat.PCM_S16,
             activation_th=activation_th,
             deactivation_th=deactivation_th,
             speech_pad_ms=speech_pad_ms,
@@ -95,16 +98,12 @@ class VAD(vad.VAD):
             max_speech_ms=max_speech_ms,
             partial_frames=partial_frames,
         )
-
-        # Model parameters
-        self.model_rate = model_rate
-        self.window_samples = window_samples
         self.device_name = device
         self.use_onnx = use_onnx and has_onnx
         # Default device annotation for type checkers; will be set in loader
         self.device: torch.device = torch.device("cpu")
-        # Buffer used by base class; annotate for type-checker
-        self.speech_buffer: bytearray = bytearray()
+
+        self.speech_buffer: Optional[PcmData] = None
 
         # Type annotations for inherited attributes from base VAD class
         self.is_speech_active: bool = False
@@ -112,18 +111,18 @@ class VAD(vad.VAD):
         self.total_speech_frames: int = 0
 
         # Verify window size is correct for the Silero model
-        if self.model_rate == 16000 and self.window_samples != 512:
+        if self.sample_rate == 16000 and self.frame_size != 512:
             logger.warning(
-                f"Adjusting window_samples from {self.window_samples} to 512, "
+                f"Adjusting window_samples from {self.frame_size} to 512, "
                 "which is required by Silero VAD at 16kHz"
             )
-            self.window_samples = 512
-        elif self.model_rate == 8000 and self.window_samples != 256:
+            self.frame_size = 512
+        elif self.sample_rate == 8000 and self.frame_size != 256:
             logger.warning(
-                f"Adjusting window_samples from {self.window_samples} to 256, "
+                f"Adjusting window_samples from {self.frame_size} to 256, "
                 "which is required by Silero VAD at 8kHz"
             )
-            self.window_samples = 256
+            self.frame_size = 256
 
         # Buffered audio at model rate (mono), accumulated across calls
         self._buffered_audio: Optional[PcmData] = None
@@ -284,134 +283,36 @@ class VAD(vad.VAD):
         self._buffered_audio = None
 
     async def is_speech(self, frame: PcmData) -> float:
-        """
-        Detect speech in an audio frame using the Silero VAD model.
-
-        Args:
-            frame: PcmData object containing audio samples
-
-        Returns:
-            Probability (0.0 to 1.0) that the frame contains speech
-        """
+        """Compute speech probability for a single model window (int16 mono)."""
         try:
-            # Resample incoming frame to model rate mono and append to buffer
-            frame_model = frame.resample(self.model_rate, 1)
-            if self._buffered_audio is None:
-                self._buffered_audio = frame_model
+            # Expect frame at base sample_rate and frame_size
+            x = frame.samples if isinstance(frame.samples, np.ndarray) else np.frombuffer(frame.samples, dtype=np.int16)
+            if x.dtype != np.int16:
+                x = x.astype(np.int16)
+            window = x.astype(np.float32) / 32768.0
+            start_time = time.time()
+            if self.use_onnx and self.onnx_session is not None:
+                onnx_input = window.reshape(1, -1).astype(np.float32)
+                ort_inputs = {self.onnx_input_name: onnx_input}
+                ort_outputs = self.onnx_session.run(None, ort_inputs)
+                speech_prob = float(ort_outputs[0][0])
             else:
-                self._buffered_audio = self._buffered_audio.append(frame_model)
+                tensor = torch.from_numpy(window).unsqueeze(0).to(self.device)
+                with torch.no_grad():
+                    assert self.model is not None
+                    speech_prob = float(self.model(tensor, self.sample_rate).item())  # type: ignore[arg-type]
 
-            # If we don't have enough samples for a full window, return 0
-            if (
-                self._buffered_audio is None
-                or len(self._buffered_audio.samples) < self.window_samples
-            ):
-                return 0.0
-
-            # Process full windows of audio
-            speech_probs = []
-
-            # Process each complete window (512 samples @ 16kHz or 256 @ 8kHz)
-            while (
-                self._buffered_audio is not None
-                and len(self._buffered_audio.samples) >= self.window_samples
-            ):
-                # Extract a window of samples (mono)
-                window_i16 = self._buffered_audio.samples[: self.window_samples]
-                # Update buffer to remaining samples
-                remainder = self._buffered_audio.samples[self.window_samples :]
-                self._buffered_audio = (
-                    PcmData(
-                        samples=remainder, sample_rate=self.model_rate, format="s16"
-                    )
-                    if remainder.size > 0
-                    else None
-                )
-
-                # Measure inference time for RTF calculation
-                start_time = time.time()
-
-                try:
-                    # Convert to the format expected by the model (float32 in [-1, 1])
-                    window = window_i16.astype(np.float32) / 32768.0
-                    if self.use_onnx and self.onnx_session is not None:
-                        # Convert to the format expected by ONNX (batch_size, sequence_length)
-                        onnx_input = window.reshape(1, -1).astype(np.float32)
-
-                        # Run ONNX inference
-                        ort_inputs = {self.onnx_input_name: onnx_input}
-                        ort_outputs = self.onnx_session.run(None, ort_inputs)
-
-                        # Extract the speech probability
-                        speech_prob = float(ort_outputs[0][0])
-                    else:
-                        # Convert numpy array to PyTorch tensor
-                        tensor = torch.from_numpy(window).unsqueeze(0).to(self.device)
-
-                        # Get model predictions using PyTorch
-                        with torch.no_grad():
-                            assert self.model is not None
-                            # Silero VAD model returns a tensor-like; cast to float afterwards
-                            speech_prob = self.model(tensor, self.model_rate)  # type: ignore[call-arg]
-                            speech_prob = float(speech_prob.item())
-
-                    # Calculate inference metrics
-                    end_time = time.time()
-                    inference_time = (end_time - start_time) * 1000  # Convert to ms
-                    self._inference_times.append(inference_time)
-                    self._total_inference_time += inference_time
-                    self._inference_count += 1
-
-                    # Keep only recent inference times (sliding window)
-                    if len(self._inference_times) > 100:
-                        self._inference_times = self._inference_times[-50:]
-
-                    # Calculate real-time factor (RTF)
-                    audio_duration = self.window_samples / self.model_rate
-                    rtf = inference_time / (audio_duration * 1000)  # Convert to ms
-
-                    # Update current speech probability
-                    self._current_speech_probability = speech_prob
-
-                    self.events.send(
-                        vad.events.VADInferenceEvent(
-                            session_id=self.session_id,
-                            plugin_name=self.provider_name,
-                            speech_probability=speech_prob,
-                            inference_time_ms=inference_time,
-                            window_samples=self.window_samples,
-                            model_rate=self.model_rate,
-                            real_time_factor=rtf,
-                            is_speech_active=self.is_speech_active,
-                            accumulated_speech_duration_ms=self._get_accumulated_speech_duration(),
-                            accumulated_silence_duration_ms=self._get_accumulated_silence_duration(),
-                            user_metadata=None,  # Will be set by caller if needed
-                        )
-                    )
-
-                    # Log speech probability and RTF at DEBUG level
-                    logger.debug(
-                        "Speech detection window processed",
-                        extra={
-                            "p": speech_prob,
-                            "rtf": rtf,
-                            "inference_ms": inference_time,
-                        },
-                    )
-
-                    speech_probs.append(speech_prob)
-
-                except Exception as e:
-                    logger.warning(f"Error during inference: {e}")
-                    # If there was an error, continue with the next window
-                    continue
-
-            # Return highest probability if we have any valid predictions
-            return max(speech_probs) if speech_probs else 0.0
-
+            # Track inference perf
+            inf_ms = (time.time() - start_time) * 1000.0
+            self._inference_times.append(inf_ms)
+            self._total_inference_time += inf_ms
+            self._inference_count += 1
+            if len(self._inference_times) > 100:
+                self._inference_times = self._inference_times[-50:]
+            self._current_speech_probability = speech_prob
+            return speech_prob
         except Exception as e:
             logger.error(f"Error processing audio frame: {e}")
-            # On error, return low probability
             return 0.0
 
     async def _flush_speech_buffer(
@@ -428,34 +329,42 @@ class VAD(vad.VAD):
             self.min_speech_ms * self.sample_rate / 1000 / self.frame_size
         )
 
-        # Convert bytearray to numpy array
-        speech_data = np.frombuffer(self.speech_buffer, dtype=np.int16).copy()
+        # Serialize buffered PcmData and compute sample count
+        speech_bytes = b""
+        speech_samples = 0
+        if self.speech_buffer is not None:
+            speech_bytes = self.speech_buffer.to_bytes()
+            speech_samples = (
+                len(self.speech_buffer.samples)
+                if isinstance(self.speech_buffer.samples, np.ndarray)
+                else len(speech_bytes) // 2
+            )
 
-        if len(speech_data) >= min_speech_frames * self.frame_size:
+        if speech_samples >= min_speech_frames * self.frame_size:
             # Log turn emission at DEBUG level with duration and samples
-            duration_ms = len(speech_data) / self.sample_rate * 1000
+            duration_ms = (
+                self.speech_buffer.duration_ms if self.speech_buffer is not None else 0.0
+            )
             logger.debug(
                 "Turn emitted",
-                extra={"duration_ms": duration_ms, "samples": len(speech_data)},
+                extra={"duration_ms": duration_ms, "samples": speech_samples},
             )
 
             # Calculate average speech probability during this segment
             avg_speech_prob = self._get_avg_speech_probability()
 
-            self.events.send(
-                vad.events.VADAudioEvent(
-                    session_id=self.session_id,
-                    plugin_name=self.provider_name,
-                    audio_data=speech_data.tobytes(),
-                    sample_rate=self.sample_rate,
-                    audio_format=vad.events.AudioFormat.PCM_S16,
-                    channels=1,
-                    duration_ms=duration_ms,
-                    speech_probability=avg_speech_prob,
-                    frame_count=len(speech_data) // self.frame_size,
-                    user_metadata=user,
-                )
-            )
+            self.events.send(vad.events.VADAudioEvent(
+                session_id=self.session_id,
+                plugin_name=self.provider_name,
+                audio_data=speech_bytes,
+                sample_rate=self.sample_rate,
+                audio_format=vad.events.AudioFormat.PCM_S16,
+                channels=1,
+                duration_ms=duration_ms,
+                speech_probability=avg_speech_prob,
+                frame_count=speech_samples // self.frame_size,
+                user_metadata=user,
+            ))
 
         # Emit speech end event if we were actively detecting speech
         if self.is_speech_active and self._speech_start_time:
@@ -473,7 +382,7 @@ class VAD(vad.VAD):
             )
 
         # Reset state variables
-        self.speech_buffer = bytearray()
+        self.speech_buffer = None
         self.silence_counter = 0
         self.is_speech_active = False
         self.total_speech_frames = 0
@@ -547,34 +456,41 @@ class VAD(vad.VAD):
                     audio_data=frame,
                 )
             )
-
-            # Add this frame to the buffer using shared utility
-            from getstream.audio.pcm_utils import numpy_array_to_bytes
-
-            frame_bytes = numpy_array_to_bytes(frame.samples)
-            self.speech_buffer.extend(frame_bytes)
+            # Initialize speech buffer with first frame
+            self.speech_buffer = PcmData(
+                samples=frame.samples,
+                sample_rate=frame.sample_rate,
+                format=frame.format,
+            )
 
         # Handle ongoing speech
         elif self.is_speech_active:
-            # Add frame to buffer in all cases during active speech
-            from getstream.audio.pcm_utils import numpy_array_to_bytes
-
-            frame_bytes = numpy_array_to_bytes(frame.samples)
-            self.speech_buffer.extend(frame_bytes)
+            # Append new frame to accumulated buffer
+            if self.speech_buffer is None:
+                self.speech_buffer = PcmData(
+                    samples=frame.samples,
+                    sample_rate=frame.sample_rate,
+                    format=frame.format,
+                )
+            else:
+                self.speech_buffer = self.speech_buffer.append(frame)
             self.total_speech_frames += 1
             self.partial_counter += 1
 
             if self.partial_counter >= self.partial_frames:
-                # Create a copy of the current speech data
-                import numpy as np
-
-                current_samples = np.frombuffer(
-                    self.speech_buffer, dtype=np.int16
-                ).copy()
-                current_bytes = numpy_array_to_bytes(current_samples)
-
-                # Calculate current duration
-                current_duration_ms = (len(current_samples) / self.sample_rate) * 1000
+                # Serialize current buffer and compute duration
+                if self.speech_buffer is not None:
+                    current_bytes = self.speech_buffer.to_bytes()
+                    current_samples_len = (
+                        len(self.speech_buffer.samples)
+                        if isinstance(self.speech_buffer.samples, np.ndarray)
+                        else len(current_bytes) // 2
+                    )
+                    current_duration_ms = self.speech_buffer.duration_ms
+                else:
+                    current_bytes = b""
+                    current_samples_len = 0
+                    current_duration_ms = 0.0
 
                 self.events.send(
                     vad.events.VADPartialEvent(
@@ -586,7 +502,7 @@ class VAD(vad.VAD):
                         channels=1,
                         duration_ms=current_duration_ms,
                         speech_probability=speech_prob,
-                        frame_count=len(current_samples) // self.frame_size,
+                        frame_count=current_samples_len // self.frame_size,
                         is_speech_active=True,
                         user_metadata=user,
                     )

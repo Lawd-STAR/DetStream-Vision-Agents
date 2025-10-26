@@ -5,7 +5,8 @@ from enum import Enum
 import uuid
 from getstream.video.rtc.track_util import PcmData
 from vision_agents.core.events.manager import EventManager
-from . import events, TurnStartedEvent, TurnEndedEvent
+from . import events
+from .events import TurnStartedEvent, TurnEndedEvent
 from ..agents.conversation import Conversation
 from ..edge.types import Participant
 

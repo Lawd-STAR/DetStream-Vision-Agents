@@ -8,13 +8,12 @@ from typing import Optional
 from getstream.video.rtc.track_util import PcmData
 import numpy as np
 import onnxruntime as ort
-from hatch.cli import self
 from transformers import WhisperFeatureExtractor
 
 from vision_agents.core.agents import Conversation
 from vision_agents.core.edge.types import Participant
 
-from vision_agents.core.turn_detection import TurnDetector, TurnEvent, TurnEventData, TurnStartedEvent, TurnEndedEvent
+from vision_agents.core.turn_detection import TurnDetector, TurnStartedEvent, TurnEndedEvent
 
 SMART_TURN_ONNX_PATH = "smart-turn-v3.0.onnx"
 SMART_TURN_ONNX_URL = "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/smart-turn-v3.0.onnx"
@@ -34,6 +33,11 @@ STOP_MS = 1000                  # end after this much trailing silence
 MAX_DURATION_SECONDS = 8        # hard cap per segment
 
 class SmartTurnDetection(TurnDetector):
+    """
+    Daily's pipecat project did a really nice job with turn detection
+    This package implements smart turn v3 as documented here
+    https://github.com/pipecat-ai/smart-turn/tree/main
+    """
     def __init__(self):
         super().__init__()
         chunk_ms = (CHUNK / RATE) * 1000.0

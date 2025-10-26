@@ -37,9 +37,21 @@ class SmartTurnDetection(TurnDetector):
     Daily's pipecat project did a really nice job with turn detection
     This package implements smart turn v3 as documented here
     https://github.com/pipecat-ai/smart-turn/tree/main
+
+    It's based on a Whisper Tiny encoder and only look at audio features.
+    This is only audio based, it doesn't understand what's said like the Vogent model.
+
+    Due to this approach it's much faster.
+    https://www.daily.co/blog/announcing-smart-turn-v3-with-cpu-inference-in-just-12ms/
+
+    A few things to keep in mind while working on this
+    - It runs Silero VAD in front of it to ensure it only runs when the user is speaking.
+    - Silero VAD uses 512 chunks, 16khz, 32 float encoded audio
+    - Smart turn uses 16khz, 32 float encoded audio
     """
     def __init__(self):
         super().__init__()
+        # TODO: proper init and settings here
         chunk_ms = (CHUNK / RATE) * 1000.0
         self.pre_chunks = math.ceil(PRE_SPEECH_MS / chunk_ms)
         self.stop_chunks = math.ceil(STOP_MS / chunk_ms)
@@ -55,6 +67,8 @@ class SmartTurnDetection(TurnDetector):
         self.since_trigger_chunks = 0
 
     def start(self):
+        # TODO: clean up the download functions
+        # TODO: load session here
         ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
         ensure_model(SILERO_ONNX_PATH, SILERO_ONNX_URL)
 

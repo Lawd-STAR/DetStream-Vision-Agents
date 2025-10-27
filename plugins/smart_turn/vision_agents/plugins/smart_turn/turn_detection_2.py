@@ -1,8 +1,9 @@
+import asyncio
 import os
 import time
-import urllib
 from typing import Optional
 
+import httpx
 from getstream.video.rtc.track_util import PcmData, AudioSegmentCollector, AudioFormat
 import numpy as np
 import onnxruntime as ort
@@ -17,23 +18,25 @@ from vision_agents.core.turn_detection import (
     TurnEndedEvent,
 )
 
-SMART_TURN_ONNX_PATH = "smart-turn-v3.0.onnx"
+# Base directory for storing model files
+# TODO: some config system exposure here
+# TODO: check requirements
+# TODO: fix bug with collector thing
+MODEL_BASE_DIR = os.path.join(os.path.dirname(__file__), "models")
+
+SMART_TURN_ONNX_FILENAME = "smart-turn-v3.0.onnx"
+SMART_TURN_ONNX_PATH = os.path.join(MODEL_BASE_DIR, SMART_TURN_ONNX_FILENAME)
 SMART_TURN_ONNX_URL = (
     "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/smart-turn-v3.0.onnx"
 )
 
-#TODO: have a base model path directory
-SILERO_ONNX_PATH = "silero_vad.onnx"
+SILERO_ONNX_FILENAME = "silero_vad.onnx"
+SILERO_ONNX_PATH = os.path.join(MODEL_BASE_DIR, SILERO_ONNX_FILENAME)
 SILERO_ONNX_URL = "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
 
-# Reset VAD internal state every N seconds
-MODEL_RESET_STATES_TIME = 5.0
-CHUNK = 512
-RATE = 16000
-VAD_THRESHOLD = 0.5  # speech probability threshold
-PRE_SPEECH_MS = 200  # keep this many ms before trigger
-STOP_MS = 1000  # end after this much trailing silence
-MAX_DURATION_SECONDS = 8  # hard cap per segment
+# Audio processing constants
+CHUNK = 512  # Samples per chunk for VAD processing
+RATE = 16000  # Sample rate in Hz (16kHz)
 
 
 class SmartTurnDetection(TurnDetector):
@@ -54,42 +57,67 @@ class SmartTurnDetection(TurnDetector):
     - Smart turn uses 16khz, 32 float encoded audio
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        vad_reset_interval_seconds: float = 5.0,
+        speech_probability_threshold: float = 0.5,
+        pre_speech_buffer_ms: int = 200,
+        silence_duration_ms: int = 1000,
+        max_segment_duration_seconds: int = 8,
+    ):
+        """
+        Initialize Smart Turn Detection.
+        
+        Args:
+            vad_reset_interval_seconds: Reset VAD internal state every N seconds to prevent drift
+            speech_probability_threshold: Minimum probability to consider audio as speech (0.0-1.0)
+            pre_speech_buffer_ms: Duration in ms to buffer before speech detection trigger
+            silence_duration_ms: Duration of trailing silence in ms before ending a turn
+            max_segment_duration_seconds: Maximum duration in seconds for a single audio segment
+        """
         super().__init__()
+        
+        # Configuration parameters
+        self.vad_reset_interval_seconds = vad_reset_interval_seconds
+        self.speech_probability_threshold = speech_probability_threshold
+        self.pre_speech_buffer_ms = pre_speech_buffer_ms
+        self.silence_duration_ms = silence_duration_ms
+        self.max_segment_duration_seconds = max_segment_duration_seconds
+        
         # Use AudioSegmentCollector for automatic pre/post buffering and segment assembly
         self.collector = AudioSegmentCollector(
-            pre_speech_ms=PRE_SPEECH_MS,
-            post_speech_ms=STOP_MS,
-            max_duration_s=MAX_DURATION_SECONDS,
+            pre_speech_ms=self.pre_speech_buffer_ms,
+            post_speech_ms=self.silence_duration_ms,
+            max_duration_s=self.max_segment_duration_seconds,
             sample_rate=RATE,
             format=AudioFormat.F32,
         )
         self.turn_in_progress = False
 
-    def start(self):
-        # TODO: clean up the download functions
-        # TODO: load session here
-        ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
-        ensure_model(SILERO_ONNX_PATH, SILERO_ONNX_URL)
+    async def start(self):
+        # Ensure model directory exists
+        os.makedirs(MODEL_BASE_DIR, exist_ok=True)
+        
+        # Prepare both models in parallel
+        await asyncio.gather(
+            self._prepare_smart_turn(),
+            self._prepare_silero_vad(),
+        )
 
-        self.vad = SileroVAD(SILERO_ONNX_PATH)
+    async def _prepare_smart_turn(self):
+        await ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
+        # Load ONNX session in thread pool to avoid blocking event loop
+        self.smart_turn = await asyncio.to_thread(build_session, SMART_TURN_ONNX_PATH)
 
-    async def _process_segment(self, pcm: PcmData, participant: Participant):
-        segment_audio_f32 = pcm.samples
-        dur_sec = segment_audio_f32.size / RATE
-        print(f"Processing segment ({dur_sec:.2f}s)...")
+    async def _prepare_silero_vad(self):
+        await ensure_model(SILERO_ONNX_PATH, SILERO_ONNX_URL)
+        # Initialize VAD in thread pool to avoid blocking event loop
+        self.vad = await asyncio.to_thread(
+            SileroVAD, 
+            SILERO_ONNX_PATH, 
+            reset_interval_seconds=self.vad_reset_interval_seconds
+        )
 
-        t0 = time.perf_counter()
-        result = predict_endpoint(pcm)  # expects 16 kHz float32 mono
-        dt_ms = (time.perf_counter() - t0) * 1000.0
-
-        pred = result.get("prediction", 0)
-        prob = result.get("probability", float("nan"))
-
-        print("--------")
-        print(f"Prediction: {'Complete' if pred == 1 else 'Incomplete'}")
-        print(f"Probability of complete: {prob:.4f}")
-        print(f"Inference time: {dt_ms:.2f} ms")
 
     async def process_audio(
         self,
@@ -107,7 +135,7 @@ class SmartTurnDetection(TurnDetector):
         # Process audio in 512-sample chunks
         for chunk in pcm.chunks(chunk_size=CHUNK):
             # Run VAD on the chunk
-            is_speech = self.vad.prob(chunk.samples) > VAD_THRESHOLD
+            is_speech = self.vad.prob(chunk.samples) > self.speech_probability_threshold
 
             # Emit turn start on first speech detection
             if is_speech and not self.turn_in_progress:
@@ -123,19 +151,70 @@ class SmartTurnDetection(TurnDetector):
 
         # Process all collected segments
         for segment in segments_to_process:
-            await self._process_segment(segment, participant)
+            prediction = await self._predict_turn_completed(segment, participant)
+            turn_completed = prediction > 0.5
 
         # End turn if we're in a turn and collector is done (silence detected)
         if self.turn_in_progress and not self.collector.is_collecting:
             self._emit_end_turn_event(TurnEndedEvent(participant=participant))
             self.turn_in_progress = False
-            print("Listening for speech...")
+
+    async def _predict_turn_completed(self, pcm: PcmData, participant: Participant) -> float:
+        """
+        Predict whether an audio segment is complete (turn ended) or incomplete.
+
+        Args:
+            pcm: PcmData containing audio samples
+
+        Returns:
+            - probability: Probability of completion (sigmoid output)
+        """
+        # Ensure it's 16khz and f32 format
+        # Both resample and to_float32 are optimized to be no-ops if already in target format
+        pcm = pcm.resample(16000).to_float32()
+
+        #TODO: can we only init this once?
+        feature_extractor = WhisperFeatureExtractor(chunk_length=8)
+
+        audio_array = pcm.samples
+        # Truncate to 8 seconds (keeping the end) or pad to 8 seconds
+        audio_array = truncate_audio_to_last_n_seconds(audio_array, n_seconds=8)
+
+        # Process audio using Whisper's feature extractor
+        inputs = feature_extractor(
+            audio_array,
+            sampling_rate=16000,
+            return_tensors="np",
+            padding="max_length",
+            max_length=8 * 16000,
+            truncation=True,
+            do_normalize=True,
+        )
+
+        # Extract features and ensure correct shape for ONNX
+        input_features = inputs.input_features.squeeze(0).astype(np.float32)
+        input_features = np.expand_dims(input_features, axis=0)  # Add batch dimension
+
+        # Run ONNX inference
+        outputs = self.smart_turn.run(None, {"input_features": input_features})
+
+        # Extract probability (ONNX model returns sigmoid probabilities)
+        probability = outputs[0][0].item()
+
+        return probability
 
 
 class SileroVAD:
     """Minimal Silero VAD ONNX wrapper for 16 kHz, mono, chunk=512."""
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, reset_interval_seconds: float = 5.0):
+        """
+        Initialize Silero VAD.
+        
+        Args:
+            model_path: Path to the ONNX model file
+            reset_interval_seconds: Reset internal state every N seconds to prevent drift
+        """
         opts = ort.SessionOptions()
         opts.inter_op_num_threads = 1
         opts.intra_op_num_threads = 1
@@ -143,6 +222,7 @@ class SileroVAD:
             model_path, providers=["CPUExecutionProvider"], sess_options=opts
         )
         self.context_size = 64  # Silero uses 64-sample context at 16 kHz
+        self.reset_interval_seconds = reset_interval_seconds
         self._state = None
         self._context = None
         self._last_reset_time = time.time()
@@ -153,7 +233,7 @@ class SileroVAD:
         self._context = np.zeros((1, self.context_size), dtype=np.float32)
 
     def maybe_reset(self):
-        if (time.time() - self._last_reset_time) >= MODEL_RESET_STATES_TIME:
+        if (time.time() - self._last_reset_time) >= self.reset_interval_seconds:
             self._init_states()
             self._last_reset_time = time.time()
 
@@ -185,12 +265,47 @@ class SileroVAD:
         return float(out[0][0])
 
 
-def ensure_model(path: str, url: str) -> str:
-    # TODO: clean this up
+async def ensure_model(path: str, url: str) -> str:
+    """
+    Download a model file asynchronously if it doesn't exist.
+    
+    Args:
+        path: Local path where the model should be saved
+        url: URL to download the model from
+        
+    Returns:
+        The path to the model file
+    """
     if not os.path.exists(path):
-        print("Downloading Silero VAD ONNX model...")
-        urllib.request.urlretrieve(url, path)
-        print("ONNX model downloaded.")
+        model_name = os.path.basename(path)
+        print(f"Downloading {model_name}...")
+        
+        try:
+            async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
+                async with client.stream("GET", url) as response:
+                    response.raise_for_status()
+                    
+                    # Write file in chunks to avoid loading entire file in memory
+                    # Use asyncio.to_thread for blocking file I/O operations
+                    chunks = []
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        chunks.append(chunk)
+                    
+                    # Write all chunks to file in thread to avoid blocking event loop
+                    def write_file():
+                        with open(path, "wb") as f:
+                            for chunk in chunks:
+                                f.write(chunk)
+                    
+                    await asyncio.to_thread(write_file)
+            
+            print(f"{model_name} downloaded.")
+        except httpx.HTTPError as e:
+            # Clean up partial download on error
+            if os.path.exists(path):
+                os.remove(path)
+            raise RuntimeError(f"Failed to download {model_name}: {e}")
+    
     return path
 
 
@@ -215,54 +330,3 @@ def build_session(onnx_path):
     return ort.InferenceSession(onnx_path, sess_options=so)
 
 
-def predict_endpoint(pcm: PcmData):
-    """
-    Predict whether an audio segment is complete (turn ended) or incomplete.
-
-    Args:
-        pcm: PcmData containing audio samples
-
-    Returns:
-        Dictionary containing prediction results:
-        - prediction: 1 for complete, 0 for incomplete
-        - probability: Probability of completion (sigmoid output)
-    """
-    # Ensure it's 16khz and f32 format
-    # Both resample and to_float32 are optimized to be no-ops if already in target format
-    pcm = pcm.resample(16000).to_float32()
-
-    feature_extractor = WhisperFeatureExtractor(chunk_length=8)
-    session = build_session(SMART_TURN_ONNX_PATH)
-
-    audio_array = pcm.samples
-    # Truncate to 8 seconds (keeping the end) or pad to 8 seconds
-    audio_array = truncate_audio_to_last_n_seconds(audio_array, n_seconds=8)
-
-    # Process audio using Whisper's feature extractor
-    inputs = feature_extractor(
-        audio_array,
-        sampling_rate=16000,
-        return_tensors="np",
-        padding="max_length",
-        max_length=8 * 16000,
-        truncation=True,
-        do_normalize=True,
-    )
-
-    # Extract features and ensure correct shape for ONNX
-    input_features = inputs.input_features.squeeze(0).astype(np.float32)
-    input_features = np.expand_dims(input_features, axis=0)  # Add batch dimension
-
-    # Run ONNX inference
-    outputs = session.run(None, {"input_features": input_features})
-
-    # Extract probability (ONNX model returns sigmoid probabilities)
-    probability = outputs[0][0].item()
-
-    # Make prediction (1 for Complete, 0 for Incomplete)
-    prediction = 1 if probability > 0.5 else 0
-
-    return {
-        "prediction": prediction,
-        "probability": probability,
-    }

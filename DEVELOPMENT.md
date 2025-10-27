@@ -313,3 +313,26 @@ You can now see the metrics at `http://localhost:9464/metrics` (make sure that y
 
 - Track.recv errors will fail silently. The API is to return a frame. Never return None. and wait till the next frame is available
 - When using frame.to_ndarray(format="rgb24") specify the format. Typically you want rgb24 when connecting/sending to Yolo etc
+
+
+## Onboarding Plan for new contributors
+
+**Audio Formats**
+
+You'll notice that audio comes in many formats. PCM, wav, mp3. 16khz, 48khz. 
+Encoded as i16 or f32. Note that webrtc by default is 48khz.
+
+A good first intro to audio formats can be found here:
+
+**Using Cursor**
+
+You can ask cursor something like "read @ai-plugin and build me a plugin called fish"
+See the docs folder for other ai instruction files
+
+**Learning Roadmap**
+
+1. Quick refresher on audio formats
+2. Build a TTS integration
+3. Build a STT integration
+4. Build an LLM integration
+5. Write a pytest test with a fixture

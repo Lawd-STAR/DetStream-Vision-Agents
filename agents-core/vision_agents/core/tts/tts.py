@@ -20,9 +20,7 @@ from vision_agents.core.events import (
 )
 from ..observability import (
     tts_latency_ms,
-    tts_bytes_streamed,
     tts_errors,
-    tts_events_emitted,
 )
 from ..edge.types import PcmData
 
@@ -180,10 +178,6 @@ class TTS(abc.ABC):
         )
 
         payload = pcm_out.to_bytes()
-        # Metrics: counters per chunk
-        attrs = {"tts_class": self.__class__.__name__}
-        tts_bytes_streamed.add(len(payload), attributes=attrs)
-        tts_events_emitted.add(1, attributes=attrs)
         self.events.send(
             TTSAudioEvent(
                 session_id=self.session_id,
@@ -343,7 +337,6 @@ class TTS(abc.ABC):
             )
             raise
         finally:
-            # Metrics: latency histogram for the entire send call
             elapsed_ms = (time.time() - start_time) * 1000.0
             tts_latency_ms.record(
                 elapsed_ms, attributes={"tts_class": self.__class__.__name__}

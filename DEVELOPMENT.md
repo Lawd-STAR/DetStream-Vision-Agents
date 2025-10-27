@@ -130,7 +130,7 @@ Some ground rules:
 
 ```python
 import asyncio
-from vision_agents.core.edge.types import PcmData
+from getstream.video.rtc.track_util import PcmData
 from openai import AsyncOpenAI
 
 async def example():
@@ -167,6 +167,12 @@ if __name__ == "__main__":
     asyncio.run(example())
 ```
 
+Other things that you get from the audio utilities:
+
+1. Changing PCM format
+2. Iterate over audio chunks (`PcmData.chunks`)
+3. Process audio with pre/post buffers (`AudioSegmentCollector`)
+4. Accumulating audio (`PcmData.append`)
 
 ### Testing audio manually
 

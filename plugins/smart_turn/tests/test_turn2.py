@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 import pytest
-from getstream.video.rtc.track_util import PcmData
+from getstream.video.rtc.track_util import PcmData, AudioFormat
 
 from vision_agents.core.agents.conversation import InMemoryConversation
 from vision_agents.core.edge.types import Participant
@@ -16,7 +16,7 @@ from vision_agents.plugins.smart_turn.turn_detection_2 import (
     SILERO_ONNX_URL,
     SileroVAD,
     SmartTurnDetection,
-    MODEL_BASE_DIR,
+    predict_endpoint,
 )
 import logging
 
@@ -27,22 +27,17 @@ class TestTurn2:
     @pytest.fixture
     async def td(self):
         td = SmartTurnDetection()
-        try:
-            await td.start()
-            yield td
-        finally:
-            await td.stop()
+        td.start()
+        yield td
 
-    async def test_smart_turn_download(self):
-        os.makedirs(MODEL_BASE_DIR, exist_ok=True)
-        await ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
+    def test_smart_turn_download(self):
+        ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
 
-    async def test_silero_download(self):
-        os.makedirs(MODEL_BASE_DIR, exist_ok=True)
-        await ensure_model(SILERO_ONNX_PATH, SILERO_ONNX_URL)
+    def test_silero_download(self):
+        ensure_model(SILERO_ONNX_PATH, SILERO_ONNX_URL)
 
-    def test_smart_turn_predict(self, td, mia_audio_16khz):
-        result = td.predict_endpoint(mia_audio_16khz)
+    def test_smart_turn_predict(self, mia_audio_16khz):
+        result = predict_endpoint(mia_audio_16khz)
         print(result)
 
     def test_silero_predict(self, mia_audio_16khz):
@@ -55,7 +50,7 @@ class TestTurn2:
             int16 = np.frombuffer(chunk, dtype=np.int16)
             f32 = (int16.astype(np.float32)) / 32768.0
             # 16khz, float32 on 512 chunk size
-            pcm_chunk = PcmData(samples=f32, format="f32", sample_rate=16000)
+            pcm_chunk = PcmData(samples=f32, format=AudioFormat.F32, sample_rate=16000)
             result = vad.prob(pcm_chunk.samples)
             print(result)
 

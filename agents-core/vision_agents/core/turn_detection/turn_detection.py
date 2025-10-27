@@ -6,6 +6,7 @@ import uuid
 from getstream.video.rtc.track_util import PcmData
 from vision_agents.core.events.manager import EventManager
 from . import events
+from .events import TurnStartedEvent, TurnEndedEvent
 from ..agents.conversation import Conversation
 from ..edge.types import Participant
 
@@ -16,22 +17,6 @@ class TurnEvent(Enum):
     TURN_STARTED = "turn_started"
     TURN_ENDED = "turn_ended"
 
-
-@dataclass
-class TurnEventData:
-    """Data associated with a turn detection event (deprecated - use TurnStartedEvent/TurnEndedEvent)."""
-
-    timestamp: float
-    speaker_id: Optional[str] = (
-        None  # User id of the speaker who just finished speaking
-    )
-    duration: Optional[float] = None
-    confidence: Optional[float] = None  # confidence level of speaker detection
-    custom: Optional[Dict[str, Any]] = None  # extensible custom data
-
-
-# Type alias for event listener callbacks (deprecated)
-EventListener = Callable[[TurnEventData], None]
 
 
 class TurnDetector(ABC):
@@ -49,34 +34,19 @@ class TurnDetector(ABC):
         self.events = EventManager()
         self.events.register_events_from_module(events, ignore_not_compatible=True)
 
-    def _emit_turn_event(
-        self, event_type: TurnEvent, event_data: TurnEventData
+    def _emit_start_turn_event(
+        self, event: TurnStartedEvent
     ) -> None:
-        """
-        Emit a turn detection event using the new event system.
-        
-        Args:
-            event_type: The type of turn event (TURN_STARTED or TURN_ENDED)
-            event_data: Data associated with the event
-        """
-        if event_type == TurnEvent.TURN_STARTED:
-            self.events.send(events.TurnStartedEvent(
-                session_id=self.session_id,
-                plugin_name=self.provider_name,
-                speaker_id=event_data.speaker_id,
-                confidence=event_data.confidence,
-                duration=event_data.duration,
-                custom=event_data.custom,
-            ))
-        elif event_type == TurnEvent.TURN_ENDED:
-            self.events.send(events.TurnEndedEvent(
-                session_id=self.session_id,
-                plugin_name=self.provider_name,
-                speaker_id=event_data.speaker_id,
-                confidence=event_data.confidence,
-                duration=event_data.duration,
-                custom=event_data.custom,
-            ))
+        event.session_id = self.session_id
+        event.plugin_name = self.provider_name
+        self.events.send(event)
+
+    def _emit_end_turn_event(
+        self, event: TurnEndedEvent
+    ) -> None:
+        event.session_id = self.session_id
+        event.plugin_name = self.provider_name
+        self.events.send(event)
 
     @abstractmethod
     async def process_audio(

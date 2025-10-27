@@ -179,7 +179,7 @@ class SmartTurnDetection(TurnDetector):
 
         audio_array = pcm.samples
         # Truncate to 8 seconds (keeping the end) or pad to 8 seconds
-        audio_array = truncate_audio_to_last_n_seconds(audio_array, n_seconds=8)
+        audio_array = pcm.tail(8.0, True, "start")
 
         # Process audio using Whisper's feature extractor
         inputs = self._whisper_extractor(
@@ -307,19 +307,6 @@ async def ensure_model(path: str, url: str) -> str:
             raise RuntimeError(f"Failed to download {model_name}: {e}")
 
     return path
-
-
-def truncate_audio_to_last_n_seconds(audio_array, n_seconds=8, sample_rate=16000):
-    # TODO: move to audio utils
-    """Truncate audio to last n seconds or pad with zeros to meet n seconds."""
-    max_samples = n_seconds * sample_rate
-    if len(audio_array) > max_samples:
-        return audio_array[-max_samples:]
-    elif len(audio_array) < max_samples:
-        # Pad with zeros at the beginning
-        padding = max_samples - len(audio_array)
-        return np.pad(audio_array, (padding, 0), mode="constant", constant_values=0)
-    return audio_array
 
 
 def build_session(onnx_path):

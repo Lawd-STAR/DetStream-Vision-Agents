@@ -1,5 +1,5 @@
-from .turn_detection import TurnDetection
+from .vogent_turn_detection import VogentTurnDetection
 
 
-__all__ = ["TurnDetection"]
+__all__ = ["VogentTurnDetection"]
 

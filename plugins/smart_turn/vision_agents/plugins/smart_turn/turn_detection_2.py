@@ -18,10 +18,11 @@ from vision_agents.core.turn_detection import (
     TurnEndedEvent,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Base directory for storing model files
-# TODO: some config system exposure here
-# TODO: check requirements
-# TODO: fix bug with collector thing
 MODEL_BASE_DIR = os.path.join(os.path.dirname(__file__), "models")
 
 SMART_TURN_ONNX_FILENAME = "smart-turn-v3.0.onnx"
@@ -55,6 +56,7 @@ class SmartTurnDetection(TurnDetector):
     - It runs Silero VAD in front of it to ensure it only runs when the user is speaking.
     - Silero VAD uses 512 chunks, 16khz, 32 float encoded audio
     - Smart turn uses 16khz, 32 float encoded audio
+    - Smart turn evaluates audio in 8s chunks. prefixed with silence at the beginning, but always 8s
     """
 
     def __init__(
@@ -106,7 +108,7 @@ class SmartTurnDetection(TurnDetector):
 
     async def _prepare_smart_turn(self):
         await ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
-        self._whisper_extractor = WhisperFeatureExtractor(chunk_length=8)
+        self._whisper_extractor = await asyncio.to_thread(WhisperFeatureExtractor, chunk_length=8)
         # Load ONNX session in thread pool to avoid blocking event loop
         self.smart_turn = await asyncio.to_thread(build_session, SMART_TURN_ONNX_PATH)
 
@@ -225,17 +227,16 @@ class SileroVAD:
         self.reset_interval_seconds = reset_interval_seconds
         self._state = None
         self._context = None
-        self._last_reset_time = time.time()
         self._init_states()
 
     def _init_states(self):
         self._state = np.zeros((2, 1, 128), dtype=np.float32)  # (2, B, 128)
         self._context = np.zeros((1, self.context_size), dtype=np.float32)
+        self._last_reset_time = time.time()
 
     def maybe_reset(self):
         if (time.time() - self._last_reset_time) >= self.reset_interval_seconds:
             self._init_states()
-            self._last_reset_time = time.time()
 
     def prob(self, chunk_f32: np.ndarray) -> float:
         """
@@ -278,7 +279,7 @@ async def ensure_model(path: str, url: str) -> str:
     """
     if not os.path.exists(path):
         model_name = os.path.basename(path)
-        print(f"Downloading {model_name}...")
+        logger.info(f"Downloading {model_name}...")
         
         try:
             async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
@@ -299,7 +300,7 @@ async def ensure_model(path: str, url: str) -> str:
                     
                     await asyncio.to_thread(write_file)
             
-            print(f"{model_name} downloaded.")
+            logger.info(f"{model_name} downloaded.")
         except httpx.HTTPError as e:
             # Clean up partial download on error
             if os.path.exists(path):

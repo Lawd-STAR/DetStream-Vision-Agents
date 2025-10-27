@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import tempfile
 import time
 import uuid
+from dataclasses import dataclass, asdict
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -37,6 +39,8 @@ from ..vad import VAD
 from ..vad.events import VADAudioEvent
 from . import events
 from .conversation import Conversation
+from dataclasses import dataclass
+
 
 if TYPE_CHECKING:
     from vision_agents.plugins.getstream.stream_edge_transport import StreamEdge
@@ -51,6 +55,24 @@ def _log_task_exception(task: asyncio.Task):
         task.result()
     except Exception:
         logger.exception("Error in background task")
+
+@dataclass
+class AgentOptions:
+    model_dir: str
+
+    def update(self, other: "AgentOptions") -> "AgentOptions":
+        merged_dict = asdict(self)
+
+        for key, value in asdict(other).items():
+            if value is not None:
+                merged_dict[key] = value
+
+        return AgentOptions(**merged_dict)
+
+def default_agent_options():
+    return AgentOptions(
+        model_dir=tempfile.gettempdir()
+    )
 
 
 class Agent:
@@ -101,7 +123,13 @@ class Agent:
         # MCP servers for external tool and resource access
         mcp_servers: Optional[List[MCPBaseServer]] = None,
         tracer: Tracer = trace.get_tracer("agents"),
+        options: AgentOptions = None,
     ):
+        if options is None:
+            options = default_agent_options()
+        else:
+            options = default_agent_options().update(options)
+        self.options = options
         self.instructions = instructions
         self.edge = edge
         self.agent_user = agent_user

@@ -16,7 +16,6 @@ from getstream.video.rtc.track_util import PcmData
 from vision_agents.core.turn_detection.turn_detection import (
     TurnDetector,
     TurnEvent,
-    TurnEventData,
 )
 from vision_agents.core.edge.types import Participant
 from vision_agents.core.agents.conversation import Conversation

@@ -18,6 +18,7 @@ from vision_agents.core.turn_detection import TurnDetector, TurnStartedEvent, Tu
 SMART_TURN_ONNX_PATH = "smart-turn-v3.0.onnx"
 SMART_TURN_ONNX_URL = "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/smart-turn-v3.0.onnx"
 
+#TODO: have a base model path directory
 SILERO_ONNX_PATH = "silero_vad.onnx"
 SILERO_ONNX_URL = (
     "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"

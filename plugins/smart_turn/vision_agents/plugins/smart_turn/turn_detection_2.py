@@ -23,16 +23,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Base directory for storing model files
-MODEL_BASE_DIR = os.path.join(os.path.dirname(__file__), "models")
-
 SMART_TURN_ONNX_FILENAME = "smart-turn-v3.0.onnx"
-SMART_TURN_ONNX_PATH = os.path.join(MODEL_BASE_DIR, SMART_TURN_ONNX_FILENAME)
 SMART_TURN_ONNX_URL = (
     "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/smart-turn-v3.0.onnx"
 )
 
 SILERO_ONNX_FILENAME = "silero_vad.onnx"
-SILERO_ONNX_PATH = os.path.join(MODEL_BASE_DIR, SILERO_ONNX_FILENAME)
 SILERO_ONNX_URL = "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
 
 # Audio processing constants
@@ -65,7 +61,7 @@ class SmartTurnDetection(TurnDetector):
             speech_probability_threshold: float = 0.5,
             pre_speech_buffer_ms: int = 200,
             silence_duration_ms: int = 1000,
-            max_segment_duration_seconds: int = 8,
+            max_segment_duration_seconds: int = 8, # TODO: this should maybe not be configurable
     ):
         """
         Initialize Smart Turn Detection.
@@ -98,7 +94,7 @@ class SmartTurnDetection(TurnDetector):
 
     async def start(self):
         # Ensure model directory exists
-        os.makedirs(MODEL_BASE_DIR, exist_ok=True)
+        os.makedirs(self.options.model_dir, exist_ok=True)
 
         # Prepare both models in parallel
         await asyncio.gather(
@@ -107,17 +103,19 @@ class SmartTurnDetection(TurnDetector):
         )
 
     async def _prepare_smart_turn(self):
-        await ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
+        path = os.path.join(self.options.model_dir, SILERO_ONNX_FILENAME)
+        await ensure_model(path, SMART_TURN_ONNX_URL)
         self._whisper_extractor = await asyncio.to_thread(WhisperFeatureExtractor, chunk_length=8)
         # Load ONNX session in thread pool to avoid blocking event loop
-        self.smart_turn = await asyncio.to_thread(build_session, SMART_TURN_ONNX_PATH)
+        self.smart_turn = await asyncio.to_thread(self.build_session)
 
     async def _prepare_silero_vad(self):
-        await ensure_model(SILERO_ONNX_PATH, SILERO_ONNX_URL)
+        path = os.path.join(self.options.model_dir, SILERO_ONNX_FILENAME)
+        await ensure_model(path, SILERO_ONNX_URL)
         # Initialize VAD in thread pool to avoid blocking event loop
         self.vad = await asyncio.to_thread(
             SileroVAD,
-            SILERO_ONNX_PATH,
+            path,
             reset_interval_seconds=self.vad_reset_interval_seconds
         )
 
@@ -175,9 +173,6 @@ class SmartTurnDetection(TurnDetector):
         # Both resample and to_float32 are optimized to be no-ops if already in target format
         pcm = pcm.resample(16000).to_float32()
 
-        # TODO: can we only init this once?
-
-        audio_array = pcm.samples
         # Truncate to 8 seconds (keeping the end) or pad to 8 seconds
         audio_array = pcm.tail(8.0, True, "start")
 
@@ -204,13 +199,13 @@ class SmartTurnDetection(TurnDetector):
 
         return probability
 
-    @classmethod
-    def build_session(cls):
+    def build_session(self):
+        path = os.path.join(self.options.model_dir, SILERO_ONNX_FILENAME)
         so = ort.SessionOptions()
         so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         so.inter_op_num_threads = 1
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        return ort.InferenceSession(SMART_TURN_ONNX_PATH, sess_options=so)
+        return ort.InferenceSession(path, sess_options=so)
 
 
 class SileroVAD:

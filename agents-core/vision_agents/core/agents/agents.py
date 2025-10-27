@@ -56,6 +56,7 @@ def _log_task_exception(task: asyncio.Task):
     except Exception:
         logger.exception("Error in background task")
 
+#TODO: move me
 @dataclass
 class AgentOptions:
     model_dir: str
@@ -130,6 +131,8 @@ class Agent:
         else:
             options = default_agent_options().update(options)
         self.options = options
+        if turn_detection is not None:
+            turn_detection.options = options
         self.instructions = instructions
         self.edge = edge
         self.agent_user = agent_user

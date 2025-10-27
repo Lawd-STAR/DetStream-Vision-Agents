@@ -204,6 +204,14 @@ class SmartTurnDetection(TurnDetector):
 
         return probability
 
+    @classmethod
+    def build_session(cls):
+        so = ort.SessionOptions()
+        so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        so.inter_op_num_threads = 1
+        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        return ort.InferenceSession(SMART_TURN_ONNX_PATH, sess_options=so)
+
 
 class SileroVAD:
     """Minimal Silero VAD ONNX wrapper for 16 kHz, mono, chunk=512."""
@@ -218,9 +226,8 @@ class SileroVAD:
         """
         opts = ort.SessionOptions()
         opts.inter_op_num_threads = 1
-        opts.intra_op_num_threads = 1
         self.session = ort.InferenceSession(
-            model_path, providers=["CPUExecutionProvider"], sess_options=opts
+            model_path, sess_options=opts
         )
         self.context_size = 64  # Silero uses 64-sample context at 16 kHz
         self.reset_interval_seconds = reset_interval_seconds
@@ -309,10 +316,5 @@ async def ensure_model(path: str, url: str) -> str:
     return path
 
 
-def build_session(onnx_path):
-    so = ort.SessionOptions()
-    so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-    so.inter_op_num_threads = 1
-    so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    return ort.InferenceSession(onnx_path, sess_options=so)
+
 

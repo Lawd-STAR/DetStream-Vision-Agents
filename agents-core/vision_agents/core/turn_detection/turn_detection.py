@@ -22,6 +22,8 @@ class TurnEvent(Enum):
 class TurnDetector(ABC):
     """Base implementation for turn detection with common functionality."""
 
+    options: "AgentOptions"
+
     def __init__(
         self, 
         confidence_threshold: float = 0.5,

@@ -5,11 +5,9 @@ import asyncio
 
 import pytest
 
-from plugins.deepgram.vision_agents.plugins import deepgram
-from plugins.vogent.vision_agents.plugins.vogent import TurnDetection
+from vision_agents.plugins.vogent import VogentTurnDetection
 from vision_agents.core.agents.conversation import InMemoryConversation
 from vision_agents.core.edge.types import Participant
-from vision_agents.core.stt.events import STTTranscriptEvent, STTPartialTranscriptEvent
 from vision_agents.core.turn_detection import TurnEndedEvent, TurnStartedEvent
 import logging
 
@@ -19,41 +17,35 @@ class TestVogentTurn:
 
     @pytest.fixture
     async def td(self):
-        td = TurnDetection()
+        td = VogentTurnDetection()
         try:
-            td.start()
+            await td.start()
             yield td
         finally:
-            td.stop()
+            await td.stop()
 
-    async def test_turn_detection(self, td, mia_audio_48khz_chunked):
+    async def test_turn_detection(self, td, mia_audio_16khz):
         participant = Participant(user_id="mia", original={})
         conversation = InMemoryConversation(instructions="be nice", messages=[])
-
-        stt = deepgram.STT()
-        @stt.events.subscribe
-        async def on_transcript(event: STTTranscriptEvent):
-            logger.info(f"Transcript, {event.text}")
-
-        @stt.events.subscribe
-        async def on_partial_transcript(event: STTPartialTranscriptEvent):
-            logger.info(f"P Transcript, {event.text}")
+        event_order = []
 
         # Subscribe to events
         @td.events.subscribe
         async def on_start(event: TurnStartedEvent):
             logger.info(f"Vogent turn started on {event.session_id}")
+            event_order.append("start")
 
         @td.events.subscribe
         async def on_stop(event: TurnEndedEvent):
             logger.info(f"Vogent turn ended on {event.session_id}")
+            event_order.append("stop")
 
-        # Process each 20ms audio chunk
-        for chunk in mia_audio_48khz_chunked:
-            logger.info("Chunk: .")
-            await stt.process_audio(chunk, participant)
-            await td.process_audio(chunk, participant, conversation)
+        await td.process_audio(mia_audio_16khz, participant, conversation)
+        await asyncio.sleep(0.001)
 
-        await asyncio.sleep(2)
+        await asyncio.sleep(5)
+
+        # Verify that turn detection is working - we should get at least some turn events
+        assert event_order == ["start", "stop"]
 
 

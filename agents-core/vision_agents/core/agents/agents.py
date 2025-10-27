@@ -169,7 +169,7 @@ class Agent:
         self._validate_configuration()
         self._prepare_rtc()
         self._setup_stt()
-        self._setup_turn_detection()
+
 
     async def simple_response(
         self, text: str, participant: Optional[Participant] = None
@@ -341,6 +341,7 @@ class Agent:
 
     async def join(self, call: Call) -> "AgentSessionContextManager":
         await self.create_user()
+        await self._setup_turn_detection()
 
         # TODO: validation. join can only be called once
         with self.tracer.start_as_current_span("join"):
@@ -635,11 +636,11 @@ class Agent:
                 completed=True,
             )
 
-    def _setup_turn_detection(self):
+    async def _setup_turn_detection(self):
         if self.turn_detection:
             self.logger.info("🎙️ Setting up turn detection listeners")
             self.events.subscribe(self._on_turn_event)
-            self.turn_detection.start()
+            await self.turn_detection.start()
 
     def _setup_stt(self):
         if self.stt:

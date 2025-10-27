@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 import numpy as np
 import pytest
@@ -7,8 +8,16 @@ from getstream.video.rtc.track_util import PcmData
 from vision_agents.core.agents.conversation import InMemoryConversation
 from vision_agents.core.edge.types import Participant
 from vision_agents.core.turn_detection import TurnStartedEvent, TurnEndedEvent
-from vision_agents.plugins.smart_turn.turn_detection_2 import ensure_model, SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL, \
-    predict_endpoint, SILERO_ONNX_PATH, SILERO_ONNX_URL, SileroVAD, SmartTurnDetection
+from vision_agents.plugins.smart_turn.turn_detection_2 import (
+    ensure_model,
+    SMART_TURN_ONNX_PATH,
+    SMART_TURN_ONNX_URL,
+    SILERO_ONNX_PATH,
+    SILERO_ONNX_URL,
+    SileroVAD,
+    SmartTurnDetection,
+    MODEL_BASE_DIR,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,19 +28,21 @@ class TestTurn2:
     async def td(self):
         td = SmartTurnDetection()
         try:
-            td.start()
+            await td.start()
             yield td
         finally:
-            td.stop()
+            await td.stop()
 
-    def test_smart_turn_download(self):
-        ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
+    async def test_smart_turn_download(self):
+        os.makedirs(MODEL_BASE_DIR, exist_ok=True)
+        await ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
 
-    def test_silero_download(self):
-        ensure_model(SILERO_ONNX_PATH, SILERO_ONNX_URL)
+    async def test_silero_download(self):
+        os.makedirs(MODEL_BASE_DIR, exist_ok=True)
+        await ensure_model(SILERO_ONNX_PATH, SILERO_ONNX_URL)
 
-    def test_smart_turn_predict(self, mia_audio_16khz):
-        result = predict_endpoint(mia_audio_16khz)
+    def test_smart_turn_predict(self, td, mia_audio_16khz):
+        result = td.predict_endpoint(mia_audio_16khz)
         print(result)
 
     def test_silero_predict(self, mia_audio_16khz):

@@ -65,10 +65,10 @@ class TurnDetector(ABC):
 
     ...
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """Some turn detection systems want to run warmup etc here"""
         self.is_active = True
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         """Again, some turn detection systems want to run cleanup here"""
         self.is_active = False

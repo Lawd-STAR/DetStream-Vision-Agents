@@ -2,7 +2,7 @@ import os
 import tempfile
 import numpy as np
 from vision_agents.core.utils.utils import parse_instructions, Instructions
-from vision_agents.core.edge.types import PcmData
+from getstream.video.rtc.track_util import PcmData, AudioFormat
 
 
 class TestParseInstructions:
@@ -334,7 +334,9 @@ class TestPcmDataMethods:
         test_samples = np.random.randint(-32768, 32767, 16000, dtype=np.int16)
         audio_bytes = test_samples.tobytes()
 
-        pcm_data = PcmData.from_bytes(audio_bytes, sample_rate=16000, format="s16")
+        pcm_data = PcmData.from_bytes(
+            audio_bytes, sample_rate=16000, format=AudioFormat.S16
+        )
 
         assert pcm_data.sample_rate == 16000
         assert pcm_data.format == "s16"
@@ -344,7 +346,9 @@ class TestPcmDataMethods:
     def test_pcm_data_resample_same_rate(self):
         """Test resampling when source and target rates are the same."""
         test_samples = np.random.randint(-32768, 32767, 16000, dtype=np.int16)
-        pcm_data = PcmData(samples=test_samples, sample_rate=16000, format="s16")
+        pcm_data = PcmData(
+            samples=test_samples, sample_rate=16000, format=AudioFormat.S16
+        )
 
         resampled = pcm_data.resample(target_sample_rate=16000)
 
@@ -357,7 +361,9 @@ class TestPcmDataMethods:
         """Test resampling from 24kHz to 48kHz (Gemini use case)."""
         # Create test audio data (1 second of 24kHz audio)
         test_samples = np.random.randint(-32768, 32767, 24000, dtype=np.int16)
-        pcm_data = PcmData(samples=test_samples, sample_rate=24000, format="s16")
+        pcm_data = PcmData(
+            samples=test_samples, sample_rate=24000, format=AudioFormat.S16
+        )
 
         resampled = pcm_data.resample(target_sample_rate=48000)
 
@@ -378,7 +384,9 @@ class TestPcmDataMethods:
         """Test resampling from 48kHz to 16kHz."""
         # Create test audio data (1 second of 48kHz audio)
         test_samples = np.random.randint(-32768, 32767, 48000, dtype=np.int16)
-        pcm_data = PcmData(samples=test_samples, sample_rate=48000, format="s16")
+        pcm_data = PcmData(
+            samples=test_samples, sample_rate=48000, format=AudioFormat.S16
+        )
 
         resampled = pcm_data.resample(target_sample_rate=16000)
 
@@ -401,7 +409,7 @@ class TestPcmDataMethods:
         pcm_data = PcmData(
             samples=test_samples,
             sample_rate=16000,
-            format="s16",
+            format=AudioFormat.S16,
             pts=1000,
             dts=950,
             time_base=0.001,
@@ -419,7 +427,9 @@ class TestPcmDataMethods:
         """Test that resampling handles 1D arrays correctly (fixes ndim error)."""
         # Create test audio data (1 second of 24kHz audio) - 1D array
         test_samples = np.random.randint(-32768, 32767, 24000, dtype=np.int16)
-        pcm_data = PcmData(samples=test_samples, sample_rate=24000, format="s16")
+        pcm_data = PcmData(
+            samples=test_samples, sample_rate=24000, format=AudioFormat.S16
+        )
 
         # This should now work without the ndim error
         resampled = pcm_data.resample(target_sample_rate=48000)
@@ -437,7 +447,9 @@ class TestPcmDataMethods:
         """Test that resampling handles 2D arrays correctly."""
         # Create test audio data (1 second of 24kHz audio) - 2D array (channels, samples)
         test_samples = np.random.randint(-32768, 32767, (1, 24000), dtype=np.int16)
-        pcm_data = PcmData(samples=test_samples, sample_rate=24000, format="s16")
+        pcm_data = PcmData(
+            samples=test_samples, sample_rate=24000, format=AudioFormat.S16
+        )
 
         # This should work with 2D arrays too
         resampled = pcm_data.resample(target_sample_rate=48000)
@@ -458,7 +470,9 @@ class TestPcmDataMethods:
         audio_bytes = test_samples.tobytes()
 
         # Chain the methods like in realtime2.py
-        pcm_data = PcmData.from_bytes(audio_bytes, sample_rate=24000, format="s16")
+        pcm_data = PcmData.from_bytes(
+            audio_bytes, sample_rate=24000, format=AudioFormat.S16
+        )
         resampled_pcm = pcm_data.resample(target_sample_rate=48000)
 
         assert pcm_data.sample_rate == 24000
@@ -475,7 +489,9 @@ class TestPcmDataMethods:
         test_samples = np.random.randint(
             -32768, 32767, 1920, dtype=np.int16
         )  # Small chunk like in the error
-        pcm_data = PcmData(samples=test_samples, sample_rate=24000, format="s16")
+        pcm_data = PcmData(
+            samples=test_samples, sample_rate=24000, format=AudioFormat.S16
+        )
 
         # This should work without the array shape error
         resampled = pcm_data.resample(target_sample_rate=48000)

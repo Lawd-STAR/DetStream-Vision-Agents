@@ -65,7 +65,7 @@ class TestOpenAIRealtime:
         # OpenAI expects 48kHz PCM audio
         import numpy as np
         from scipy import signal
-        from vision_agents.core.edge.types import PcmData
+        from getstream.video.rtc.track_util import PcmData, AudioFormat
 
         # Resample from 16kHz to 48kHz
         samples_16k = mia_audio_16khz.samples
@@ -73,7 +73,9 @@ class TestOpenAIRealtime:
         samples_48k = signal.resample(samples_16k, num_samples_48k).astype(np.int16)
 
         # Create new PcmData with 48kHz
-        audio_48khz = PcmData(samples=samples_48k, sample_rate=48000, format="s16")
+        audio_48khz = PcmData(
+            samples=samples_48k, sample_rate=48000, format=AudioFormat.S16
+        )
 
         await realtime.simple_response(
             "Listen to the following audio and tell me what you hear"
@@ -237,11 +239,13 @@ class TestOpenAIRealtime:
         test_participant = Participant(original=None, user_id="test_user_123")
 
         # Simulate sending audio with participant info
-        from vision_agents.core.edge.types import PcmData
+        from getstream.video.rtc.track_util import PcmData, AudioFormat
         import numpy as np
 
         pcm = PcmData(
-            samples=np.zeros(100, dtype=np.int16), sample_rate=48000, format="s16"
+            samples=np.zeros(100, dtype=np.int16),
+            sample_rate=48000,
+            format=AudioFormat.S16,
         )
         await realtime.simple_audio_response(pcm, test_participant)
 
@@ -291,13 +295,15 @@ class TestOpenAIRealtime:
             user_transcripts.append(event)
 
         from vision_agents.core.edge.types import Participant
-        from vision_agents.core.edge.types import PcmData
+        from getstream.video.rtc.track_util import PcmData, AudioFormat
         import numpy as np
 
         # User A sends audio
         participant_a = Participant(original=None, user_id="user_a")
         pcm_a = PcmData(
-            samples=np.zeros(100, dtype=np.int16), sample_rate=48000, format="s16"
+            samples=np.zeros(100, dtype=np.int16),
+            sample_rate=48000,
+            format=AudioFormat.S16,
         )
         await realtime.simple_audio_response(pcm_a, participant_a)
 
@@ -317,7 +323,9 @@ class TestOpenAIRealtime:
         # User B sends audio (before A's transcription arrives)
         participant_b = Participant(original=None, user_id="user_b")
         pcm_b = PcmData(
-            samples=np.zeros(100, dtype=np.int16), sample_rate=48000, format="s16"
+            samples=np.zeros(100, dtype=np.int16),
+            sample_rate=48000,
+            format=AudioFormat.S16,
         )
         await realtime.simple_audio_response(pcm_b, participant_b)
 

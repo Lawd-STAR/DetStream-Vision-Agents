@@ -6,7 +6,8 @@ from typing import (
 )
 
 from getstream.video.rtc.audio_track import AudioStreamTrack
-from vision_agents.core.edge.types import PcmData, Participant
+from getstream.video.rtc.track_util import PcmData
+from vision_agents.core.edge.types import Participant
 
 
 import abc
@@ -37,8 +38,9 @@ class Realtime(LLM, abc.ABC):
         - Transcript outgoing audio
 
     """
-    fps : int = 1
-    session_id : str # UUID to identify this session
+
+    fps: int = 1
+    session_id: str  # UUID to identify this session
 
     def __init__(
         self,

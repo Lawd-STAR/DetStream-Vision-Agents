@@ -13,7 +13,7 @@ import pytest
 from dotenv import load_dotenv
 from torchvision.io.video import av
 
-from vision_agents.core.edge.types import PcmData
+from getstream.video.rtc.track_util import PcmData, AudioFormat
 from vision_agents.core.stt.events import STTTranscriptEvent, STTErrorEvent
 
 load_dotenv()
@@ -124,7 +124,7 @@ def mia_audio_16khz():
     container.close()
 
     # Create PCM data
-    pcm = PcmData(samples=samples, sample_rate=target_rate, format="s16")
+    pcm = PcmData(samples=samples, sample_rate=target_rate, format=AudioFormat.S16)
 
     return pcm
 
@@ -167,7 +167,7 @@ def mia_audio_48khz():
     container.close()
 
     # Create PCM data
-    pcm = PcmData(samples=samples, sample_rate=target_rate, format="s16")
+    pcm = PcmData(samples=samples, sample_rate=target_rate, format=AudioFormat.S16)
 
     return pcm
 
@@ -176,7 +176,7 @@ def mia_audio_48khz():
 def mia_audio_48khz_chunked():
     """Load mia.mp3 and yield 48kHz PCM data in 20ms chunks."""
     audio_file_path = os.path.join(get_assets_dir(), "mia.mp3")
-    
+
     # Load audio file using PyAV
     container = av.open(audio_file_path)
     audio_stream = container.streams.audio[0]
@@ -186,11 +186,7 @@ def mia_audio_48khz_chunked():
     # Create resampler if needed
     resampler = None
     if original_sample_rate != target_rate:
-        resampler = av.AudioResampler(
-            format='s16',
-            layout='mono',
-            rate=target_rate
-        )
+        resampler = av.AudioResampler(format="s16", layout="mono", rate=target_rate)
 
     # Read all audio frames
     samples = []
@@ -219,16 +215,14 @@ def mia_audio_48khz_chunked():
     # Yield chunks of audio
     chunks = []
     for i in range(0, len(samples), chunk_size):
-        chunk_samples = samples[i:i + chunk_size]
-        
+        chunk_samples = samples[i : i + chunk_size]
+
         # Create PCM data for this chunk
         pcm_chunk = PcmData(
-            samples=chunk_samples,
-            sample_rate=target_rate,
-            format="s16"
+            samples=chunk_samples, sample_rate=target_rate, format=AudioFormat.S16
         )
         chunks.append(pcm_chunk)
-    
+
     return chunks
 
 

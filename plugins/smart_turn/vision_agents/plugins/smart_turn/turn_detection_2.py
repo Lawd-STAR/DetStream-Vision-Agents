@@ -106,6 +106,7 @@ class SmartTurnDetection(TurnDetector):
 
     async def _prepare_smart_turn(self):
         await ensure_model(SMART_TURN_ONNX_PATH, SMART_TURN_ONNX_URL)
+        self._whisper_extractor = WhisperFeatureExtractor(chunk_length=8)
         # Load ONNX session in thread pool to avoid blocking event loop
         self.smart_turn = await asyncio.to_thread(build_session, SMART_TURN_ONNX_PATH)
 
@@ -117,7 +118,6 @@ class SmartTurnDetection(TurnDetector):
             SILERO_ONNX_PATH, 
             reset_interval_seconds=self.vad_reset_interval_seconds
         )
-
 
     async def process_audio(
         self,
@@ -174,14 +174,14 @@ class SmartTurnDetection(TurnDetector):
         pcm = pcm.resample(16000).to_float32()
 
         #TODO: can we only init this once?
-        feature_extractor = WhisperFeatureExtractor(chunk_length=8)
+
 
         audio_array = pcm.samples
         # Truncate to 8 seconds (keeping the end) or pad to 8 seconds
         audio_array = truncate_audio_to_last_n_seconds(audio_array, n_seconds=8)
 
         # Process audio using Whisper's feature extractor
-        inputs = feature_extractor(
+        inputs = self._whisper_extractor(
             audio_array,
             sampling_rate=16000,
             return_tensors="np",

@@ -6,7 +6,7 @@ from typing import Optional
 import httpx
 import numpy as np
 from faster_whisper import WhisperModel
-from getstream.video.rtc.track_util import AudioFormat, AudioSegmentCollector, PcmData
+from getstream.video.rtc.track_util import AudioFormat, PcmData
 from vogent_turn import TurnDetector as VogentDetector
 
 from vision_agents.core.agents import Conversation
@@ -21,12 +21,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Base directory for storing model files
-MODEL_BASE_DIR = os.path.join(os.path.dirname(__file__), "models")
-
 # Silero VAD model (reused from smart_turn)
 SILERO_ONNX_FILENAME = "silero_vad.onnx"
-SILERO_ONNX_PATH = os.path.join(MODEL_BASE_DIR, SILERO_ONNX_FILENAME)
 SILERO_ONNX_URL = "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
 
 # Audio processing constants
@@ -47,6 +43,7 @@ class VogentTurnDetection(TurnDetector):
     than audio-only approaches, especially for handling incomplete thoughts.
     
     Reference: https://github.com/vogent/vogent-turn
+    Blogpost: https://blog.vogent.ai/posts/voturn-80m-state-of-the-art-turn-detection-for-voice-agents
     """
 
     def __init__(
@@ -83,6 +80,7 @@ class VogentTurnDetection(TurnDetector):
         self.vogent_threshold = vogent_threshold
         
         # Use AudioSegmentCollector for automatic pre/post buffering and segment assembly
+        # TODO: remove colector
         self.collector = AudioSegmentCollector(
             pre_speech_ms=self.pre_speech_buffer_ms,
             post_speech_ms=self.silence_duration_ms,
@@ -104,7 +102,7 @@ class VogentTurnDetection(TurnDetector):
     async def start(self):
         """Initialize models and prepare for turn detection."""
         # Ensure model directory exists
-        os.makedirs(MODEL_BASE_DIR, exist_ok=True)
+        os.makedirs(self.options.model_dir, exist_ok=True)
         
         # Prepare models in parallel
         await asyncio.gather(
@@ -115,11 +113,12 @@ class VogentTurnDetection(TurnDetector):
 
     async def _prepare_silero_vad(self):
         """Load Silero VAD model for speech detection."""
-        await ensure_model(SILERO_ONNX_PATH, SILERO_ONNX_URL)
+        path = os.path.join(self.options.model_dir, SILERO_ONNX_FILENAME)
+        await ensure_model(path, SILERO_ONNX_URL)
         # Initialize VAD in thread pool to avoid blocking event loop
         self.vad = await asyncio.to_thread(
             SileroVAD, 
-            SILERO_ONNX_PATH, 
+            path,
             reset_interval_seconds=self.vad_reset_interval_seconds
         )
 
@@ -142,8 +141,11 @@ class VogentTurnDetection(TurnDetector):
         # Note: compile_model=False to avoid torch.compile issues with edge cases
         self.vogent = await asyncio.to_thread(
             VogentDetector,
-            compile_model=False,
-            warmup=False,
+            compile_model=True,
+            warmup=True,
+            device=None,
+            model_name="vogent/Vogent-Turn-80M",
+            revision = "main",
         )
         logger.info("Vogent turn detection model loaded")
 
@@ -260,7 +262,7 @@ class VogentTurnDetection(TurnDetector):
             audio_array,
             language="en",
             beam_size=1,
-            vad_filter=False,  # We already did VAD
+            vad_filter=False,  # We already did VAD TODO: maybe use this instead of our own vad?
         )
         
         # Collect all text segments

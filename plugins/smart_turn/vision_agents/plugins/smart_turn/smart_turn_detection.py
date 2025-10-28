@@ -9,6 +9,7 @@ import httpx
 from getstream.video.rtc.track_util import PcmData, AudioFormat
 import numpy as np
 import onnxruntime as ort
+from hatch.cli import self
 from transformers import WhisperFeatureExtractor
 
 from vision_agents.core.agents import Conversation
@@ -60,6 +61,7 @@ class SmartTurnDetection(TurnDetector):
     - Silero VAD uses 512 chunks, 16khz, 32 float encoded audio
     - Smart turn uses 16khz, 32 float encoded audio
     - Smart turn evaluates audio in 8s chunks. prefixed with silence at the beginning, but always 8s
+    - Vad expects 512 samples, webrtc will send 20ms (so roughly 304 packets at 16khz)
     """
 
     def __init__(
@@ -83,6 +85,7 @@ class SmartTurnDetection(TurnDetector):
         super().__init__()
 
         # Configuration parameters
+        self._audio_buffer = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
         self._silence = Silence()
         self.vad_reset_interval_seconds = vad_reset_interval_seconds
         self.speech_probability_threshold = speech_probability_threshold
@@ -96,7 +99,7 @@ class SmartTurnDetection(TurnDetector):
         )
         self._active_segment: Optional[PcmData] = None
         self._turn_in_progress = False
-        self._trailing_silence_ms = 0.0
+        self._trailing_silence_ms = 2000
         self._tail_silence_ms = 0.0
 
         # TODO: move this to the right place
@@ -150,23 +153,34 @@ class SmartTurnDetection(TurnDetector):
         The tricky bit is the 8 seconds. smart turn always want 8 seconds.
         - Do we share silence + the end (like it's shown in example record and predict?)
         - Or do we share historical + length of new segment to 8 seconds. (this seems better)
-
-        TODO:
-        - pre speech and active segment will have the same data twice
         """
 
         # ensure audio is in the right format
         audio_data = audio_data.resample(16000).to_float32()
+        self._audio_buffer = self._audio_buffer.append(audio_data)
+
+        if len(self._audio_buffer.samples) < 512:
+            # too small to process
+            return
+
+        audio_chunks = list(self._audio_buffer.chunks(512))
+        self._audio_buffer = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
+        self._audio_buffer.append(audio_chunks[-1]) # add back the last one
+        # this ensures we handle the situation when audio data can't be divided by 512. ie 900
 
         # detect speech in small 512 chunks, gather to larger audio segments with speech
-        for chunk in audio_data.chunks(512):
-
+        for chunk in audio_chunks[:-1]:
             # predict if this segment has speech
-            is_speech = await self.vad.predict_speech(chunk)
+            speech_probability = await self.vad.predict_speech(chunk.samples)
+            is_speech = speech_probability > self.speech_probability_threshold
+            logger.info("Processing chunk %d, is speech: %s %s", len(chunk.samples), speech_probability, is_speech)
 
             if self._active_segment is not None:
                 # add to the segment
-                self._active_segment.append(chunk)
+                logger.info("adding to segment")
+
+                # TODO: it's pythong, append should work on the object, this is wrong
+                self._active_segment = self._active_segment.append(chunk)
 
                 if is_speech:
                     self._silence.speaking_chunks += 1
@@ -178,14 +192,15 @@ class SmartTurnDetection(TurnDetector):
 
                 trailing_silence_ms = self._silence.trailing_silence_chunks * 512 / 16000
                 long_silence = trailing_silence_ms > self._trailing_silence_ms
-                max_duration_reached = self._active_segment.duration_ms >= self.max_segment_duration_seconds
+                max_duration_reached = self._active_segment.duration_ms >= self.max_segment_duration_seconds * 1000
+                logger.info("trailing_silence_ms = %s, self._active_segment.duration_ms %s", trailing_silence_ms, self._active_segment.duration_ms)
 
                 if long_silence or max_duration_reached:
                     # expand to 8 seconds with either silence or historical
                     merged = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
-                    merged.append(self._pre_speech_buffer)
-                    merged.append(self._active_segment)
-                    merged.tail(8, True, "start")
+                    merged = merged.append(self._pre_speech_buffer)
+                    merged = merged.append(self._active_segment)
+                    merged = merged.tail(8, True, "start")
                     # see if we've completed the turn
                     prediction = await self._predict_turn_completed(
                         merged, participant
@@ -196,9 +211,10 @@ class SmartTurnDetection(TurnDetector):
                         self._active_segment = None
                         self._silence = Silence()
                         self._pre_speech_buffer = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
-                        self._pre_speech_buffer.append(merged) # so we can reuse it for the next segment
-                        self._pre_speech_buffer.tail(8)
+                        self._pre_speech_buffer = self._pre_speech_buffer.append(merged) # so we can reuse it for the next segment
+                        self._pre_speech_buffer = self._pre_speech_buffer.tail(8)
             elif is_speech and self._active_segment is None:
+                logger.info("starting new segment")
                 self._emit_start_turn_event(TurnStartedEvent(participant=participant))
                 # create a new segment
                 self._active_segment = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
@@ -302,8 +318,8 @@ class SileroVAD:
         # Ensure shape (1, 512) and concat context
         x = np.reshape(chunk_f32, (1, -1))
         if x.shape[1] != CHUNK:
-            # Return 0.0 for incomplete chunks instead of raising
-            return 0.0
+            # Raise on incorrect usage
+            raise ValueError("incorrect usage for predict speech. only send audio data in chunks of 512. got %d", x.shape[1])
         x = np.concatenate((self._context, x), axis=1)
 
         # Run ONNX

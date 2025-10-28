@@ -19,7 +19,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class TestTurn2:
+class TestSmartTurn:
     @pytest.fixture
     async def td(self):
         td = SmartTurnDetection()
@@ -32,7 +32,7 @@ class TestTurn2:
         vad = SileroVAD(path)
 
         for pcm_chunk in mia_audio_16khz.chunks(chunk_size=1024):
-            result = vad.predict_speech(
+            result = await vad.predict_speech(
                 pcm_chunk.resample(target_sample_rate=16000).to_float32().samples
             )
             print(result)
@@ -54,12 +54,9 @@ class TestTurn2:
             logger.info(f"Smart turn turn ended on {event.session_id}")
             event_order.append("stop")
 
-        for pcm in mia_audio_16khz.chunks(chunk_size=1024):
+        for pcm in mia_audio_16khz.chunks(chunk_size=304):
             await td.process_audio(pcm, participant, conversation)
-            # simulate how td gets data periodically
-            await asyncio.sleep(512.0 / 16000.0)
 
-        await asyncio.sleep(4)
         assert event_order == ["start", "stop"]
 
     async def test_turn_detection(self, td, mia_audio_16khz):

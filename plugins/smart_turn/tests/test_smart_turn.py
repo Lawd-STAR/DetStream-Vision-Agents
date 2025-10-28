@@ -7,7 +7,7 @@ import pytest
 from vision_agents.core.agents.conversation import InMemoryConversation
 from vision_agents.core.edge.types import Participant
 from vision_agents.core.turn_detection import TurnStartedEvent, TurnEndedEvent
-from vision_agents.plugins.smart_turn.turn_detection_2 import (
+from vision_agents.plugins.smart_turn.smart_turn_detection import (
     SileroVAD,
     SmartTurnDetection,
     ensure_model,

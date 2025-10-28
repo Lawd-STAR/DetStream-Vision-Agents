@@ -1,4 +1,4 @@
-from .turn_detection_2 import SmartTurnDetection as TurnDetection
+from .smart_turn_detection import SmartTurnDetection as TurnDetection
 
 __all__ = ["TurnDetection"]
 

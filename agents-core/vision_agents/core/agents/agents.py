@@ -861,10 +861,10 @@ class Agent:
 
         if isinstance(event, TurnStartedEvent):
             # Interrupt TTS when user starts speaking (barge-in)
-            if event.speaker_id and event.speaker_id != self.agent_user.id:
+            if event.participant and event.participant.user_id != self.agent_user.id:
                 if self.tts:
                     self.logger.info(
-                        f"👉 Turn started - interrupting TTS for participant {event.speaker_id}"
+                        f"👉 Turn started - interrupting TTS for participant {event.participant.user_id}"
                     )
                     try:
                         await self.tts.stop_audio()
@@ -872,27 +872,27 @@ class Agent:
                         self.logger.error(f"Error stopping TTS: {e}")
                 else:
                     self.logger.info(
-                        f"👉 Turn started - participant speaking {event.speaker_id} : {event.confidence}"
+                        f"👉 Turn started - participant speaking {event.participant.user_id} : {event.confidence}"
                     )
             else:
                 # Agent itself started speaking - this is normal
                 self.logger.debug(
-                    f"👉 Turn started - agent speaking {event.speaker_id}"
+                    f"👉 Turn started - agent speaking {event.participant.user_id}"
                 )
         elif isinstance(event, TurnEndedEvent):
             self.logger.info(
-                f"👉 Turn ended - participant {event.speaker_id} finished (duration: {event.duration}, confidence: {event.confidence})"
+                f"👉 Turn ended - participant {event.participant.user_id} finished (confidence: {event.confidence})"
             )
 
             # When turn detection is enabled, trigger LLM response when user's turn ends
             # This is the signal that the user has finished speaking and expects a response
-            if event.speaker_id and event.speaker_id != self.agent_user.id:
+            if event.participant and event.participant.user_id != self.agent_user.id:
                 # Get the accumulated transcript for this speaker
-                transcript = self._pending_user_transcripts.get(event.speaker_id, "")
+                transcript = self._pending_user_transcripts.get(event.participant.user_id, "")
 
                 if transcript and transcript.strip():
                     self.logger.info(
-                        f"🤖 Triggering LLM response after turn ended for {event.speaker_id}"
+                        f"🤖 Triggering LLM response after turn ended for {event.participant.user_id}"
                     )
 
                     # Create participant object if we have metadata
@@ -906,7 +906,7 @@ class Agent:
                         await self.simple_response(transcript, participant)
 
                     # Clear the pending transcript for this speaker
-                    self._pending_user_transcripts[event.speaker_id] = ""
+                    self._pending_user_transcripts[event.participant.user_id] = ""
 
     async def _on_stt_error(self, error):
         """Handle STT service errors."""

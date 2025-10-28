@@ -153,6 +153,7 @@ class SmartTurnDetection(TurnDetector):
                 self._turn_in_progress
                 and self._tail_silence_ms > self.silence_duration_ms
             ):
+                logger.info("Ending turn for participant: %s", participant)
                 self._emit_end_turn_event(TurnEndedEvent(participant=participant))
                 self._reset()
 

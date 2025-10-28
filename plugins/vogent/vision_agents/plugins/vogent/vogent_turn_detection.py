@@ -196,6 +196,7 @@ class VogentTurnDetection(TurnDetector):
             # Only check turn completion if we have transcription
             if self.current_transcription.strip():
                 # Get previous line from conversation
+                # TODO: don't rely on the conversation class
                 prev_line = self._get_previous_line(conversation)
                 
                 # Check if turn is complete using vogent
@@ -262,7 +263,7 @@ class VogentTurnDetection(TurnDetector):
             audio_array,
             language="en",
             beam_size=1,
-            vad_filter=False,  # We already did VAD TODO: maybe use this instead of our own vad?
+            vad_filter=False,  # We already did VAD
         )
         
         # Collect all text segments
@@ -292,10 +293,9 @@ class VogentTurnDetection(TurnDetector):
         """
         # Ensure it's 16khz and f32 format
         pcm = pcm.resample(16000).to_float32()
-        audio_array = pcm.samples
-        
-        # Truncate to 8 seconds (vogent requirement)
-        audio_array = truncate_audio_to_last_n_seconds(audio_array, n_seconds=8)
+
+        # Truncate to 8 seconds
+        audio_array = pcm.tail(8, False).samples
         
         # Run vogent prediction in thread pool
         result = await asyncio.to_thread(
@@ -340,6 +340,7 @@ class VogentTurnDetection(TurnDetector):
         return ""
 
 
+# TODO: maybe move to utility class
 class SileroVAD:
     """
     Minimal Silero VAD ONNX wrapper for 16 kHz, mono, chunk=512.
@@ -448,15 +449,4 @@ async def ensure_model(path: str, url: str) -> str:
     
     return path
 
-
-def truncate_audio_to_last_n_seconds(audio_array, n_seconds=8, sample_rate=16000):
-    """Truncate audio to last n seconds or pad with zeros to meet n seconds."""
-    max_samples = n_seconds * sample_rate
-    if len(audio_array) > max_samples:
-        return audio_array[-max_samples:]
-    elif len(audio_array) < max_samples:
-        # Pad with zeros at the beginning
-        padding = max_samples - len(audio_array)
-        return np.pad(audio_array, (padding, 0), mode="constant", constant_values=0)
-    return audio_array
 

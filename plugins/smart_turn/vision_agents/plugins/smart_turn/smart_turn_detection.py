@@ -150,17 +150,16 @@ class SmartTurnDetection(TurnDetector):
         The tricky bit is the 8 seconds. smart turn always want 8 seconds.
         - Do we share silence + the end (like it's shown in example record and predict?)
         - Or do we share historical + length of new segment to 8 seconds. (this seems better)
+
+        TODO:
+        - pre speech and active segment will have the same data twice
         """
 
         # ensure audio is in the right format
         audio_data = audio_data.resample(16000).to_float32()
 
-        # keep last n audio packets in speech buffer
-        self._pre_speech_buffer.append(audio_data)
-        self._pre_speech_buffer.tail(8)
-
         # detect speech in small 512 chunks, gather to larger audio segments with speech
-        for chunk in self._pre_speech_buffer.chunks(512):
+        for chunk in audio_data.chunks(512):
 
             # predict if this segment has speech
             is_speech = await self.vad.predict_speech(chunk)
@@ -195,11 +194,20 @@ class SmartTurnDetection(TurnDetector):
                     if turn_ended:
                         self._emit_end_turn_event(TurnEndedEvent(participant=participant))
                         self._active_segment = None
+                        self._silence = Silence()
+                        self._pre_speech_buffer = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
+                        self._pre_speech_buffer.append(merged) # so we can reuse it for the next segment
+                        self._pre_speech_buffer.tail(8)
             elif is_speech and self._active_segment is None:
                 self._emit_start_turn_event(TurnStartedEvent(participant=participant))
                 # create a new segment
                 self._active_segment = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
+                self._active_segment.append(chunk)
                 self._silence = Silence()
+            else:
+                # keep last n audio packets in speech buffer
+                self._pre_speech_buffer.append(audio_data)
+                self._pre_speech_buffer.tail(8)
 
 
     async def _predict_turn_completed(
@@ -284,7 +292,7 @@ class SileroVAD:
             self._init_states()
 
     async def predict_speech(self, chunk_f32: np.ndarray) -> float:
-        return await asyncio.to_thread(self._predict_speech, chunk_f32)
+        return await asyncio.to_thread(self._predict_speech, chunk_f32=chunk_f32)
 
     def _predict_speech(self, chunk_f32: np.ndarray) -> float:
         """

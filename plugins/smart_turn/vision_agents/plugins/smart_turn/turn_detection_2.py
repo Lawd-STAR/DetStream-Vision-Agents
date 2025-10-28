@@ -4,12 +4,13 @@ import time
 from typing import Optional
 
 import httpx
-from getstream.video.rtc.track_util import PcmData, AudioSegmentCollector, AudioFormat
+from getstream.video.rtc.track_util import PcmData, AudioFormat
 import numpy as np
 import onnxruntime as ort
 from transformers import WhisperFeatureExtractor
 
 from vision_agents.core.agents import Conversation
+from vision_agents.core.agents.agents import default_agent_options
 from vision_agents.core.edge.types import Participant
 
 from vision_agents.core.turn_detection import (
@@ -56,12 +57,12 @@ class SmartTurnDetection(TurnDetector):
     """
 
     def __init__(
-            self,
-            vad_reset_interval_seconds: float = 5.0,
-            speech_probability_threshold: float = 0.5,
-            pre_speech_buffer_ms: int = 200,
-            silence_duration_ms: int = 1000,
-            max_segment_duration_seconds: int = 8, # TODO: this should maybe not be configurable
+        self,
+        vad_reset_interval_seconds: float = 5.0,
+        speech_probability_threshold: float = 0.5,
+        pre_speech_buffer_ms: int = 200,
+        silence_duration_ms: int = 3000,
+        max_segment_duration_seconds: int = 8,  # TODO: this should not be configurable
     ):
         """
         Initialize Smart Turn Detection.
@@ -82,15 +83,18 @@ class SmartTurnDetection(TurnDetector):
         self.silence_duration_ms = silence_duration_ms
         self.max_segment_duration_seconds = max_segment_duration_seconds
 
-        # Use AudioSegmentCollector for automatic pre/post buffering and segment assembly
-        self.collector = AudioSegmentCollector(
-            pre_speech_ms=self.pre_speech_buffer_ms,
-            post_speech_ms=self.silence_duration_ms,
-            max_duration_s=self.max_segment_duration_seconds,
-            sample_rate=RATE,
-            format=AudioFormat.F32,
+        self._active_speech_buffer = PcmData(
+            sample_rate=RATE, channels=1, format=AudioFormat.F32
         )
-        self.turn_in_progress = False
+        self._pre_speech_buffer = PcmData(
+            sample_rate=RATE, channels=1, format=AudioFormat.F32
+        )
+        self._turn_in_progress = False
+        self._trailing_silence_ms = 0.0
+        self._tail_silence_ms = 0.0
+
+        # TODO: move this to the right place
+        self.options = default_agent_options()
 
     async def start(self):
         # Ensure model directory exists
@@ -103,9 +107,11 @@ class SmartTurnDetection(TurnDetector):
         )
 
     async def _prepare_smart_turn(self):
-        path = os.path.join(self.options.model_dir, SILERO_ONNX_FILENAME)
+        path = os.path.join(self.options.model_dir, SMART_TURN_ONNX_FILENAME)
         await ensure_model(path, SMART_TURN_ONNX_URL)
-        self._whisper_extractor = await asyncio.to_thread(WhisperFeatureExtractor, chunk_length=8)
+        self._whisper_extractor = await asyncio.to_thread(
+            WhisperFeatureExtractor, chunk_length=8
+        )
         # Load ONNX session in thread pool to avoid blocking event loop
         self.smart_turn = await asyncio.to_thread(self.build_session)
 
@@ -114,52 +120,66 @@ class SmartTurnDetection(TurnDetector):
         await ensure_model(path, SILERO_ONNX_URL)
         # Initialize VAD in thread pool to avoid blocking event loop
         self.vad = await asyncio.to_thread(
-            SileroVAD,
-            path,
-            reset_interval_seconds=self.vad_reset_interval_seconds
+            SileroVAD, path, reset_interval_seconds=self.vad_reset_interval_seconds
         )
 
     async def process_audio(
-            self,
-            audio_data: PcmData,
-            participant: Participant,
-            conversation: Optional[Conversation],
+        self,
+        audio_data: PcmData,
+        participant: Participant,
+        conversation: Optional[Conversation],
     ) -> None:
-        # Ensure audio is in the right format: 16kHz, float32
-        # Both resample and to_float32 are optimized to be no-ops if already in target format
-        pcm = audio_data.resample(RATE).to_float32()
+        self._pre_speech_buffer = self._pre_speech_buffer.append(audio_data)
+        if self._pre_speech_buffer.duration * 1000 <= self.pre_speech_buffer_ms:
+            return
 
-        # Track segments for final turn-end processing
-        segments_to_process = []
-
-        # Process audio in 512-sample chunks
-        for chunk in pcm.chunks(chunk_size=CHUNK):
-            # Run VAD on the chunk
+        for chunk in self._pre_speech_buffer.chunks(512):
             is_speech = self.vad.prob(chunk.samples) > self.speech_probability_threshold
 
-            # Emit turn start on first speech detection
-            if is_speech and not self.turn_in_progress:
-                self._emit_start_turn_event(TurnStartedEvent(participant=participant))
-                self.turn_in_progress = True
+            if self._turn_in_progress:
+                self._active_speech_buffer = self._active_speech_buffer.append(chunk)
+                if is_speech:
+                    self._tail_silence_ms = 0
+                else:
+                    self._tail_silence_ms += chunk.duration * 1000
+            else:
+                if is_speech:
+                    self._emit_start_turn_event(
+                        TurnStartedEvent(participant=participant)
+                    )
+                    self._turn_in_progress = True
 
-            # Feed chunk to collector, which handles pre/post buffering
-            segment = self.collector.add_chunk(chunk, is_speech=is_speech)
+            if (
+                self._turn_in_progress
+                and self._tail_silence_ms > self.silence_duration_ms
+            ):
+                self._emit_end_turn_event(TurnEndedEvent(participant=participant))
+                self._reset()
 
-            # Collect segments for processing
-            if segment is not None:
-                segments_to_process.append(segment)
+            if (
+                self._turn_in_progress
+                and self._tail_silence_ms > 100
+                and self._active_speech_buffer.duration
+                >= self.max_segment_duration_seconds
+            ):
+                prediction = await self._predict_turn_completed(
+                    self._active_speech_buffer, participant
+                )
+                if prediction > 0.5:
+                    self._emit_end_turn_event(TurnEndedEvent(participant=participant))
+                    self._reset()
 
-        # Process all collected segments
-        for segment in segments_to_process:
-            prediction = await self._predict_turn_completed(segment, participant)
-            turn_completed = prediction > 0.5
+        if self._pre_speech_buffer.duration * 1000 > self.pre_speech_buffer_ms:
+            self._pre_speech_buffer = self._pre_speech_buffer.head(0)
 
-        # End turn if we're in a turn and collector is done (silence detected)
-        if self.turn_in_progress and not self.collector.is_collecting:
-            self._emit_end_turn_event(TurnEndedEvent(participant=participant))
-            self.turn_in_progress = False
+    def _reset(self):
+        self._tail_silence_ms = 0.0
+        self._turn_in_progress = False
+        self._active_speech_buffer = self._active_speech_buffer.head(0)
 
-    async def _predict_turn_completed(self, pcm: PcmData, participant: Participant) -> float:
+    async def _predict_turn_completed(
+        self, pcm: PcmData, participant: Participant
+    ) -> float:
         """
         Predict whether an audio segment is complete (turn ended) or incomplete.
 
@@ -169,16 +189,12 @@ class SmartTurnDetection(TurnDetector):
         Returns:
             - probability: Probability of completion (sigmoid output)
         """
-        # Ensure it's 16khz and f32 format
-        # Both resample and to_float32 are optimized to be no-ops if already in target format
-        pcm = pcm.resample(16000).to_float32()
-
         # Truncate to 8 seconds (keeping the end) or pad to 8 seconds
-        audio_array = pcm.tail(8.0, True, "start")
+        audio_array = pcm.tail(8.0)
 
         # Process audio using Whisper's feature extractor
         inputs = self._whisper_extractor(
-            audio_array,
+            audio_array.resample(16000).to_float32().samples,
             sampling_rate=16000,
             return_tensors="np",
             padding="max_length",
@@ -200,7 +216,7 @@ class SmartTurnDetection(TurnDetector):
         return probability
 
     def build_session(self):
-        path = os.path.join(self.options.model_dir, SILERO_ONNX_FILENAME)
+        path = os.path.join(self.options.model_dir, SMART_TURN_ONNX_FILENAME)
         so = ort.SessionOptions()
         so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         so.inter_op_num_threads = 1
@@ -221,9 +237,7 @@ class SileroVAD:
         """
         opts = ort.SessionOptions()
         opts.inter_op_num_threads = 1
-        self.session = ort.InferenceSession(
-            model_path, sess_options=opts
-        )
+        self.session = ort.InferenceSession(model_path, sess_options=opts)
         self.context_size = 64  # Silero uses 64-sample context at 16 kHz
         self.reset_interval_seconds = reset_interval_seconds
         self._state = None
@@ -257,10 +271,11 @@ class SileroVAD:
             "state": self._state,
             "sr": np.array(16000, dtype=np.int64),
         }
-        out, self._state = self.session.run(None, ort_inputs)
+        outputs = self.session.run(None, ort_inputs)
+        out, self._state = outputs
 
         # Update context (keep last 64 samples)
-        self._context = x[:, -self.context_size:]
+        self._context = x[:, -self.context_size :]
         self.maybe_reset()
 
         # out shape is (1, 1) -> return scalar
@@ -283,7 +298,9 @@ async def ensure_model(path: str, url: str) -> str:
         logger.info(f"Downloading {model_name}...")
 
         try:
-            async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=300.0, follow_redirects=True
+            ) as client:
                 async with client.stream("GET", url) as response:
                     response.raise_for_status()
 
@@ -309,7 +326,3 @@ async def ensure_model(path: str, url: str) -> str:
             raise RuntimeError(f"Failed to download {model_name}: {e}")
 
     return path
-
-
-
-

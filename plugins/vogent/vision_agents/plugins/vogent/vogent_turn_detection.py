@@ -172,7 +172,7 @@ class VogentTurnDetection(TurnDetector):
         # Process audio in 512-sample chunks for VAD
         for chunk in pcm.chunks(chunk_size=CHUNK):
             # Run VAD on the chunk
-            is_speech = self.vad.prob(chunk.samples) > self.speech_probability_threshold
+            is_speech = self.vad.predict_speech(chunk.samples) > self.speech_probability_threshold
 
             # Emit turn start on first speech detection
             if is_speech and not self.turn_in_progress:

@@ -32,7 +32,7 @@ class TestTurn2:
         vad = SileroVAD(path)
 
         for pcm_chunk in mia_audio_16khz.chunks(chunk_size=1024):
-            result = vad.prob(
+            result = vad.predict_speech(
                 pcm_chunk.resample(target_sample_rate=16000).to_float32().samples
             )
             print(result)

@@ -1,4 +1,5 @@
 import asyncio
+import atexit
 import os
 import time
 from dataclasses import dataclass
@@ -105,6 +106,11 @@ class SmartTurnDetection(TurnDetector):
         self._trailing_silence_ms = 2000
         self._tail_silence_ms = 0.0
 
+        # Producer-consumer pattern: audio packets go into buffer, background task processes them
+        self._audio_queue = asyncio.Queue()
+        self._processing_task = None
+        self._shutdown_event = asyncio.Event()
+
         if options is None:
             self.options = default_agent_options()
         else:
@@ -119,6 +125,12 @@ class SmartTurnDetection(TurnDetector):
             self._prepare_smart_turn(),
             self._prepare_silero_vad(),
         )
+
+        # Start background processing task
+        self._processing_task = asyncio.create_task(self._process_audio_loop())
+
+        # Call parent start method
+        await super().start()
 
     async def _prepare_smart_turn(self):
         path = os.path.join(self.options.model_dir, SMART_TURN_ONNX_FILENAME)
@@ -142,6 +154,58 @@ class SmartTurnDetection(TurnDetector):
         audio_data: PcmData,
         participant: Participant,
         conversation: Optional[Conversation],
+    ) -> None:
+        """
+        Fast, non-blocking audio packet enqueueing.
+        Actual processing happens in background task.
+        """
+
+        if not hasattr(self, "_bk_audio"):
+            print("================")
+            print("================")
+            print("================")
+            print("STARTED NOW!")
+            print("================")
+            print("================")
+            print("================")
+            self._bk_audio = audio_data
+
+            def dumpwav():
+                with open("/Users/tommaso/out.wav", "wb") as f:
+                    _ = f.write(self._bk_audio.to_wav_bytes())
+
+            atexit.register(dumpwav)
+
+        self._bk_audio = self._bk_audio.append(audio_data)
+
+        # Just enqueue the audio packet - fast and non-blocking
+        await self._audio_queue.put((audio_data, participant, conversation))
+
+    async def _process_audio_loop(self):
+        """
+        Background task that continuously processes audio from the queue.
+        This is where the actual VAD and turn detection logic runs.
+        """
+        while not self._shutdown_event.is_set():
+            try:
+                # Wait for audio packet with timeout to allow shutdown
+                audio_data, participant, conversation = await asyncio.wait_for(
+                    self._audio_queue.get(), timeout=1.0
+                )
+
+                # Process the audio packet
+                await self._process_audio_packet(audio_data, participant)
+
+            except asyncio.TimeoutError:
+                # Timeout is expected - continue loop to check shutdown
+                continue
+            except Exception as e:
+                logger.error(f"Error processing audio: {e}")
+
+    async def _process_audio_packet(
+        self,
+        audio_data: PcmData,
+        participant: Participant,
     ) -> None:
         """
         Process audio does the following:
@@ -257,6 +321,28 @@ class SmartTurnDetection(TurnDetector):
                 # keep last n audio packets in speech buffer
                 self._pre_speech_buffer = self._pre_speech_buffer.append(chunk)
                 self._pre_speech_buffer = self._pre_speech_buffer.tail(8)
+
+    async def wait_for_processing_complete(self, timeout: float = 5.0) -> None:
+        """Wait for all queued audio to be processed. Useful for testing."""
+        start_time = time.time()
+        while self._audio_queue.qsize() > 0 and (time.time() - start_time) < timeout:
+            await asyncio.sleep(0.01)
+
+        # Give a small buffer for the processing to complete
+        await asyncio.sleep(0.1)
+
+    async def stop(self):
+        """Stop turn detection and cleanup background task."""
+        await super().stop()
+
+        if self._processing_task:
+            self._shutdown_event.set()
+            self._processing_task.cancel()
+            try:
+                await self._processing_task
+            except asyncio.CancelledError:
+                pass
+            self._processing_task = None
 
     async def _predict_turn_completed(
         self, pcm: PcmData, participant: Participant

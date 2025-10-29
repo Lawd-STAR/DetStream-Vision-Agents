@@ -757,11 +757,13 @@ class Agent:
             audio_bytes = pcm_data.samples.tobytes()
             if self.vad:
                 asyncio.create_task(self.vad.process_audio(pcm_data, participant))
-            # Forward to audio processors (skip None values)
+
             for processor in self.audio_processors:
                 if processor is None:
                     continue
-                await processor.process_audio(audio_bytes, participant.user_id)
+                asyncio.create_task(
+                    processor.process_audio(audio_bytes, participant.user_id)
+                )
 
             # when in Realtime mode call the Realtime directly (non-blocking)
             if self.realtime_mode and isinstance(self.llm, Realtime):
@@ -769,11 +771,11 @@ class Agent:
                 asyncio.create_task(
                     self.llm.simple_audio_response(pcm_data, participant)
                 )
-                # task.add_done_callback(lambda t: print(f"Task (send_audio_pcm) error: {t.exception()}"))
+
             # Process audio through STT
             elif self.stt:
                 self.logger.debug(f"🎵 Processing audio from {participant}")
-                await self.stt.process_audio(pcm_data, participant)
+                asyncio.create_task(self.stt.process_audio(pcm_data, participant))
 
     async def _process_track(self, track_id: str, track_type: int, participant):
         # TODO: handle CancelledError

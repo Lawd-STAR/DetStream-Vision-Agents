@@ -417,6 +417,9 @@ class Agent:
     async def join(self, call: Call) -> "AgentSessionContextManager":
         # TODO: validation. join can only be called once
         self.logger.info("joining call")
+        if self.stt:
+            # TODO: run this in parallel for various services?
+            await self.stt.start()
         self.start_tracing()
 
         if self._root_span:

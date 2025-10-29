@@ -105,5 +105,8 @@ class STT(abc.ABC):
     ):
         pass
 
+    async def start(self):
+        pass
+
     async def close(self):
         self.closed = True

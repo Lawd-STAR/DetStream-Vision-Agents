@@ -14,6 +14,7 @@ class TestDeepgramSTT:
         """Create and manage Deepgram STT lifecycle"""
         stt = deepgram.STT()
         try:
+            await stt.start()
             yield stt
         finally:
             await stt.close()

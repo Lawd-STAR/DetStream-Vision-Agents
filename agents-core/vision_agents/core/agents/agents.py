@@ -684,8 +684,6 @@ class Agent:
         async def on_audio_received(event: AudioReceivedEvent):
             pcm = event.pcm_data
             participant = event.participant
-            if not pcm or not participant:
-                return
 
             if self.turn_detection is not None:
                 await self.turn_detection.process_audio(pcm, participant, conversation=self.conversation)

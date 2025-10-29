@@ -78,8 +78,6 @@ class TestSmartTurn:
         await td.process_audio(mia_audio_16khz, participant, conversation)
         await asyncio.sleep(0.001)
 
-        await asyncio.sleep(5)
-
         # Verify that turn detection is working - we should get at least some turn events
         # With continuous processing, we may get multiple start/stop cycles
         assert event_order == ["start", "stop"]

@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from torchvision.io.video import av
 
 from getstream.video.rtc.track_util import PcmData, AudioFormat
-from vision_agents.core.stt.events import STTTranscriptEvent, STTErrorEvent
+from vision_agents.core.stt.events import STTTranscriptEvent, STTErrorEvent, STTPartialTranscriptEvent
 
 load_dotenv()
 
@@ -34,6 +34,7 @@ class STTSession:
         """
         self.stt = stt
         self.transcripts = []
+        self.partial_transcripts = []
         self.errors = []
         self._event = asyncio.Event()
 
@@ -42,6 +43,10 @@ class STTSession:
         async def on_transcript(event: STTTranscriptEvent):
             self.transcripts.append(event)
             self._event.set()
+
+        @stt.events.subscribe
+        async def on_partial_transcript(event: STTPartialTranscriptEvent):
+            self.partial_transcripts.append(event)
 
         @stt.events.subscribe
         async def on_error(event: STTErrorEvent):
@@ -169,6 +174,24 @@ def mia_audio_48khz():
     # Create PCM data
     pcm = PcmData(samples=samples, sample_rate=target_rate, format=AudioFormat.S16)
 
+    return pcm
+
+
+@pytest.fixture
+def silence_2s_48khz():
+    """Generate 2 seconds of silence at 48kHz PCM data."""
+    sample_rate = 48000
+    duration_seconds = 2.0
+    
+    # Calculate number of samples for 2 seconds
+    num_samples = int(sample_rate * duration_seconds)
+    
+    # Create silence (zeros) as int16
+    samples = np.zeros(num_samples, dtype=np.int16)
+    
+    # Create PCM data
+    pcm = PcmData(samples=samples, sample_rate=sample_rate, format=AudioFormat.S16)
+    
     return pcm
 
 

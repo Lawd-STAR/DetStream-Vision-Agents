@@ -18,18 +18,15 @@ class STT(stt.STT):
     """
     Deepgram Speech-to-Text implementation using Flux model.
 
-    Deepgram provides highly accurate speech-to-text transcription with support
-    for multiple languages and models. This implementation uses the Flux model
-    via the v2 listen WebSocket API for real-time streaming transcription.
+    - https://developers.deepgram.com/docs/flux/quickstart
+    - https://github.com/deepgram/deepgram-python-sdk/blob/main/examples/listen/v2/connect/async.py
+    - https://github.com/deepgram/deepgram-python-sdk/tree/main
 
-    The implementation maintains a persistent WebSocket connection to Deepgram,
-    automatically resamples audio to 16kHz (recommended by Deepgram), and
-    processes streaming results in real-time.
+    Deepgram flux runs turn detection internally. So running turn detection in front of this is optional/not needed
 
-    Events:
-        - transcript: Emitted when a final transcript is available.
-        - partial_transcript: Emitted when a partial transcript is available.
-        - error: Emitted when an error occurs during transcription.
+    - eot_threshold controls turn end sensitivity
+    - eager_eot_threshold controls eager turn ending (so you can already prepare the LLM response)
+
     """
 
     def __init__(
@@ -75,15 +72,49 @@ class STT(stt.STT):
         self._connection_ready = asyncio.Event()
         self._connection_context = None
 
-    async def start(self):
+    async def process_audio(
+        self,
+        pcm_data: PcmData,
+        participant: Optional[Participant] = None,
+    ):
+        """
+        Process audio data through Deepgram for transcription.
+
+        This method sends audio to the existing WebSocket connection. The connection
+        is started automatically on first use. Audio is automatically resampled to 16kHz.
+
+        Args:
+            pcm_data: The PCM audio data to process.
+            participant: Optional participant metadata (currently not used in streaming mode).
+        """
+        if self.closed:
+            logger.warning("Deepgram STT is closed, ignoring audio")
+            return
+
+        # Ensure connection is established
+        if self.connection is None:
+            await self._start()
+
+        # Wait for connection to be ready
+        await self._connection_ready.wait()
+
+        # Resample to 16kHz mono (recommended by Deepgram)
+        resampled_pcm = pcm_data.resample(16_000, 1)
+
+        # Convert int16 samples to bytes
+        audio_bytes = resampled_pcm.samples.tobytes()
+
+        self._current_participant = participant
+
+        await self.connection.send_media(audio_bytes)
+
+    async def _start(self):
         """
         Start the Deepgram WebSocket connection and begin listening for transcripts.
         """
         if self.connection is not None:
             logger.warning("Deepgram connection already started")
             return
-
-        logger.info("Starting Deepgram v2 listen connection")
 
         try:
             # Build connection parameters
@@ -114,13 +145,10 @@ class STT(stt.STT):
             self.connection.on("close", self._on_close)
 
             # Start listening - this internally handles the message loop
-            logger.info("Starting Deepgram listener")
             asyncio.create_task(self.connection.start_listening())
 
             # Mark connection as ready
             self._connection_ready.set()
-
-            logger.info("Deepgram connection established and listening")
 
         except asyncio.TimeoutError:
             error_msg = "Timeout connecting to Deepgram. Check your API key and network connection."
@@ -137,8 +165,6 @@ class STT(stt.STT):
         Args:
             message: The message object from Deepgram
         """
-        logger.debug(f"Received message: {message}")
-
         try:
             # Extract message data
             if not hasattr(message, "type"):
@@ -160,12 +186,12 @@ class STT(stt.STT):
             error: The error from Deepgram
         """
         logger.error(f"Deepgram WebSocket error: {error}")
+        raise Exception(f"Deepgram WebSocket error {error}")
 
     def _on_close(self, _):
         """
         Event handler for connection close.
         """
-        logger.info("Deepgram WebSocket connection closed")
         self._connection_ready.clear()
 
     async def _handle_turn_info_message(self, message):
@@ -184,6 +210,7 @@ class STT(stt.STT):
         # Get event type to determine if final or partial
         # "StartOfTurn" and "Update" = partial, "EndOfTurn" = final
         event = getattr(message, "event", "")
+
         is_final = event == "EndOfTurn"
 
         # Get end of turn confidence
@@ -219,88 +246,21 @@ class STT(stt.STT):
 
         if is_final:
             # Final transcript (event == "EndOfTurn")
-            logger.debug(
-                "Received final transcript from Deepgram",
-                extra={
-                    "text_length": len(transcript_text),
-                    "avg_confidence": avg_confidence,
-                    "end_of_turn_confidence": end_of_turn_confidence,
-                    "event": event,
-                },
-            )
             self._emit_transcript_event(
                 transcript_text, participant, response_metadata
             )
         else:
             # Partial transcript (event == "StartOfTurn" or "Update")
-            logger.debug(
-                "Received partial transcript from Deepgram",
-                extra={
-                    "text_length": len(transcript_text),
-                    "end_of_turn_confidence": end_of_turn_confidence,
-                    "event": event,
-                },
-            )
             self._emit_partial_transcript_event(
                 transcript_text, participant, response_metadata
             )
 
-    async def process_audio(
-        self,
-        pcm_data: PcmData,
-        participant: Optional[Participant] = None,
-    ):
-        """
-        Process audio data through Deepgram for transcription.
 
-        This method sends audio to the existing WebSocket connection. The connection
-        is started automatically on first use. Audio is automatically resampled to 16kHz.
-
-        Args:
-            pcm_data: The PCM audio data to process.
-            participant: Optional participant metadata (currently not used in streaming mode).
-        """
-        if self.closed:
-            logger.warning("Deepgram STT is closed, ignoring audio")
-            return
-
-        # Ensure connection is established
-        if self.connection is None:
-            logger.info("Connection not started, starting now")
-            await self.start()
-            logger.info("start completed")
-
-        # Wait for connection to be ready
-        await self._connection_ready.wait()
-
-        try:
-            # Resample to 16kHz mono (recommended by Deepgram)
-            resampled_pcm = pcm_data.resample(16_000, 1)
-
-            # Convert int16 samples to bytes
-            audio_bytes = resampled_pcm.samples.tobytes()
-
-            logger.info(
-                "Sending audio to Deepgram",
-                extra={"audio_bytes": len(audio_bytes)},
-            )
-            self._current_participant = participant
-
-            await self.connection.send_media(audio_bytes)
-
-        except Exception as e:
-            logger.error(
-                "Error sending audio to Deepgram",
-                exc_info=e,
-            )
-            raise
 
     async def close(self):
         """
         Close the Deepgram connection and clean up resources.
         """
-        logger.info("Closing Deepgram STT")
-
         # Mark as closed first
         await super().close()
 

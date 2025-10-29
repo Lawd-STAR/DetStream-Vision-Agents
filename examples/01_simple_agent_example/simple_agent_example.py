@@ -3,7 +3,7 @@ from uuid import uuid4
 from dotenv import load_dotenv
 
 from vision_agents.core import User, Agent
-from vision_agents.plugins import cartesia, deepgram, getstream, smart_turn, gemini
+from vision_agents.plugins import cartesia, deepgram, getstream, gemini, smart_turn
 
 load_dotenv()
 
@@ -23,7 +23,6 @@ async def start_agent() -> None:
         tts=cartesia.TTS(),
         stt=deepgram.STT(),
         turn_detection=smart_turn.TurnDetection(),
-        # turn_detection=vogent.TurnDetection(),
         # realtime version (vad, tts and stt not needed)
         # llm=openai.Realtime()
     )

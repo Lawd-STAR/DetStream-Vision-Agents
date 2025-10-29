@@ -106,11 +106,27 @@ class StreamEdge(EdgeTransport):
         track_key = (user_id, session_id, track_type_int)
         is_agent_track = user_id == self.agent_user_id
 
+        # Skip processing the agent's own tracks - we don't subscribe to them
+        if is_agent_track:
+            self.logger.debug(f"Skipping agent's own track: {track_type_int} from {user_id}")
+            return
+
         # First check if track already exists in map (e.g., from previous unpublish/republish)
         if track_key in self._track_map:
             self._track_map[track_key]["published"] = True
+            track_id = self._track_map[track_key]["track_id"]
             self.logger.info(
-                f"Track marked as published (already existed): {track_key}"
+                f"Track re-published: {track_type_int} from {user_id}, track_id: {track_id}"
+            )
+            
+            # Emit TrackAddedEvent so agent can switch to this track
+            self.events.send(
+                events.TrackAddedEvent(
+                    plugin_name="getstream",
+                    track_id=track_id,
+                    track_type=track_type_int,
+                    user=event.participant,
+                )
             )
             return
 
@@ -161,6 +177,7 @@ class StreamEdge(EdgeTransport):
                         participant=event.participant,
                     )
                 )
+
         else:
             raise TimeoutError(
                 f"Timeout waiting for pending track: {track_type_int} ({expected_kind}) from user {user_id}, "
@@ -213,6 +230,7 @@ class StreamEdge(EdgeTransport):
                         track_id=track_id,
                         track_type=track_type_int,
                         user=participant,
+                        # TODO: user=participant?
                         participant=participant,
                     )
                 )
@@ -270,7 +288,7 @@ class StreamEdge(EdgeTransport):
         self.events.silent(events.AudioReceivedEvent)
 
         @connection.on("audio")
-        async def on_audio_received(pcm: PcmData, participant: Participant):
+        async def on_audio_received(pcm: PcmData | None, participant: Participant):
             self.events.send(
                 events.AudioReceivedEvent(
                     plugin_name="getstream",
@@ -388,10 +406,10 @@ class StreamEdge(EdgeTransport):
             "token": token,
             "skip_lobby": "true",
             "user_name": name,
-            "video_encoder": "vp8",
-            "bitrate": 12000000,
+            "video_encoder": "h264",  # Use H.264 instead of VP8 for better compatibility
+            "bitrate": 12000000,  
             "w": 1920,
-            "h": 1080,
+            "h": 1080,   
             "channel_type": self.channel_type,
         }
 

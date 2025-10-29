@@ -11,6 +11,7 @@ import logging
 from uuid import uuid4
 
 from dotenv import load_dotenv
+import pyinstrument
 
 from vision_agents.plugins import openai, getstream
 from vision_agents.core.agents import Agent
@@ -23,6 +24,8 @@ load_dotenv()
 
 
 async def start_agent() -> None:
+    profiler = pyinstrument.Profiler()
+    profiler.start()
     # Set the call ID here to be used in the logging
     call_id = str(uuid4())
 
@@ -71,6 +74,10 @@ You are a voice assistant.
         logger.info("Greeted the user")
 
         await agent.finish()  # run till the call ends
+
+    profiler.stop()
+    with open('profiled.html', 'w') as f:
+        f.write(profiler.output_html())
 
 
 if __name__ == "__main__":

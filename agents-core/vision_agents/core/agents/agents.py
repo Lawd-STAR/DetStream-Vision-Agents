@@ -381,7 +381,9 @@ class Agent:
                 # when running in realtime mode, there is no need to send the response to the LLM
                 return
 
-            user_id = event.user_id() or "user"
+            user_id = event.user_id()
+            if user_id is None:
+                raise ValueError("user id is none, this indicates a bug in the code")
 
             # Determine how to handle LLM triggering based on turn detection
             if self.turn_detection is not None:
@@ -401,7 +403,7 @@ class Agent:
                 # Without turn detection: trigger LLM immediately on transcript completion
                 # This is the traditional STT -> LLM flow
                 with self.span("agent.on_stt_transcript_event_create_response") as span:
-                    await self.simple_response(event.text, event.user_metadata)
+                    await self.simple_response(event.text, event.participant)
 
     async def join(self, call: Call) -> "AgentSessionContextManager":
         # TODO: validation. join can only be called once

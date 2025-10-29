@@ -90,3 +90,13 @@ class TestSmartTurn:
             "start",
             "stop",
         ]  # Should end with either start or stop
+
+    """
+    TODO
+    - Test that the 2nd turn detect includes the audio from the first turn
+    - Test that turn detection is ran after 8s of audio
+    - Test that turn detection is run after speech and 2s of silence
+    - Test that silence doens't start a new segmetn
+    - Test that speaking starts a new segment
+    
+    """

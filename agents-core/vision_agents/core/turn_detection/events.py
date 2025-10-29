@@ -40,6 +40,8 @@ class TurnEndedEvent(PluginBaseEvent):
     type: str = field(default="plugin.turn_ended", init=False)
     participant: Optional[Participant] = None
     confidence: Optional[float] = None
+    trailing_silence_ms: Optional[float] = None
+    duration_ms: Optional[float] = None
     custom: Optional[Dict[str, Any]] = None
 
 

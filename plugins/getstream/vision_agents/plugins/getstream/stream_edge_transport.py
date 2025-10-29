@@ -158,7 +158,7 @@ class StreamEdge(EdgeTransport):
                         track_id=track_id,
                         track_type=track_type_int,
                         user=event.participant,
-                        user_metadata=event.participant,
+                        participant=event.participant,
                     )
                 )
         else:
@@ -213,7 +213,7 @@ class StreamEdge(EdgeTransport):
                         track_id=track_id,
                         track_type=track_type_int,
                         user=participant,
-                        user_metadata=participant,
+                        participant=participant,
                     )
                 )
                 # Mark as unpublished instead of removing
@@ -276,7 +276,6 @@ class StreamEdge(EdgeTransport):
                     plugin_name="getstream",
                     pcm_data=pcm,
                     participant=participant,
-                    user_metadata=participant,
                 )
             )
 

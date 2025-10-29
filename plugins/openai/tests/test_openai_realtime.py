@@ -280,8 +280,8 @@ class TestOpenAIRealtime:
         assert user_transcripts[0].text == "Test transcription with user ID"
 
         # Verify the participant/user_id is correctly tracked
-        assert user_transcripts[0].user_metadata is not None
-        assert user_transcripts[0].user_metadata.user_id == "test_user_123"
+        assert user_transcripts[0].participant is not None
+        assert user_transcripts[0].participant.user_id == "test_user_123"
 
         # Verify the user_id() helper method works
         assert user_transcripts[0].user_id() == "test_user_123"
@@ -370,10 +370,10 @@ class TestOpenAIRealtime:
 
         # User A's transcription should be attributed to User A (not B, despite B speaking more recently)
         assert user_transcripts[0].text == "Hello from User A"
-        assert user_transcripts[0].user_metadata is not None
-        assert user_transcripts[0].user_metadata.user_id == "user_a"
+        assert user_transcripts[0].participant is not None
+        assert user_transcripts[0].participant.user_id == "user_a"
 
         # User B's transcription should be attributed to User B
         assert user_transcripts[1].text == "Hello from User B"
-        assert user_transcripts[1].user_metadata is not None
-        assert user_transcripts[1].user_metadata.user_id == "user_b"
+        assert user_transcripts[1].participant is not None
+        assert user_transcripts[1].participant.user_id == "user_b"

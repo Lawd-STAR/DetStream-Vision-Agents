@@ -1,5 +1,6 @@
 import pytest
 
+from vision_agents.core.edge.types import Participant
 from vision_agents.plugins import deepgram
 from conftest import STTSession
 
@@ -22,7 +23,7 @@ class TestDeepgramSTT:
         session = STTSession(stt)
         
         # Process the audio
-        await stt.process_audio(mia_audio_48khz)
+        await stt.process_audio(mia_audio_48khz, participant=Participant({}, user_id="hi"))
         
         # Wait for result
         await session.wait_for_result(timeout=30.0)
@@ -31,4 +32,6 @@ class TestDeepgramSTT:
         # Verify transcript
         full_transcript = session.get_full_transcript()
         assert "forgotten treasures" in full_transcript.lower()
+
+        assert session.transcripts[0].participant.user_id == "hi"
 

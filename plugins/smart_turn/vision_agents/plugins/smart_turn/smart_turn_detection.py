@@ -239,8 +239,7 @@ class SmartTurnDetection(TurnDetector):
                 # add to the segment
                 logger.info("adding to segment")
 
-                # TODO: it's python, append should work on the object, this is wrong
-                self._active_segment = self._active_segment.append(chunk)
+                self._active_segment.append(chunk)
 
                 if is_speech:
                     self._silence.speaking_chunks += 1
@@ -253,7 +252,7 @@ class SmartTurnDetection(TurnDetector):
                 # TODO: make this testable
 
                 trailing_silence_ms = (
-                    self._silence.trailing_silence_chunks * 512 / 16000 * 1000
+                    self._silence.trailing_silence_chunks * 512 / 16000 * 1000 * 5 #DTX correction
                 )
                 long_silence = trailing_silence_ms > self._trailing_silence_ms
                 max_duration_reached = (
@@ -271,15 +270,20 @@ class SmartTurnDetection(TurnDetector):
                     merged = PcmData(
                         sample_rate=RATE, channels=1, format=AudioFormat.F32
                     )
-                    merged = merged.append(self._pre_speech_buffer)
-                    merged = merged.append(self._active_segment)
+                    merged.append(self._pre_speech_buffer)
+                    merged.append(self._active_segment)
                     merged = merged.tail(8, True, "start")
                     # see if we've completed the turn
                     prediction = await self._predict_turn_completed(merged, participant)
                     turn_ended = prediction > 0.5
                     if turn_ended:
                         self._emit_end_turn_event(
-                            TurnEndedEvent(participant=participant)
+                            TurnEndedEvent(
+                                participant=participant,
+                                confidence=prediction,
+                                trailing_silence_ms=trailing_silence_ms,
+                                duration_ms=self._active_segment.duration_ms,
+                            )
                         )
                         self._active_segment = None
                         self._silence = Silence()
@@ -287,7 +291,7 @@ class SmartTurnDetection(TurnDetector):
                         self._pre_speech_buffer = PcmData(
                             sample_rate=RATE, channels=1, format=AudioFormat.F32
                         )
-                        self._pre_speech_buffer = self._pre_speech_buffer.append(merged)
+                        self._pre_speech_buffer.append(merged)
                         self._pre_speech_buffer = self._pre_speech_buffer.tail(8)
             elif is_speech and self._active_segment is None:
                 logger.info("starting new segment")
@@ -296,12 +300,11 @@ class SmartTurnDetection(TurnDetector):
                 self._active_segment = PcmData(
                     sample_rate=RATE, channels=1, format=AudioFormat.F32
                 )
-                self._active_segment = self._active_segment.append(chunk)
+                self._active_segment.append(chunk)
                 self._silence = Silence()
             else:
-                logger.info("no active segment")
                 # keep last n audio packets in speech buffer
-                self._pre_speech_buffer = self._pre_speech_buffer.append(chunk)
+                self._pre_speech_buffer.append(chunk)
                 self._pre_speech_buffer = self._pre_speech_buffer.tail(8)
 
     async def wait_for_processing_complete(self, timeout: float = 5.0) -> None:

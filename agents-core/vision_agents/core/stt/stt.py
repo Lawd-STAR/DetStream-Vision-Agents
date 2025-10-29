@@ -38,7 +38,7 @@ class STT(abc.ABC):
     def _emit_transcript_event(
         self,
         text: str,
-        participant: Optional[Union[Dict[str, Any], Participant]],
+        participant: Participant,
         response: TranscriptResponse,
     ):
         """
@@ -53,14 +53,14 @@ class STT(abc.ABC):
             session_id=self.session_id,
             plugin_name=self.provider_name,
             text=text,
-            user_metadata=participant,
+            participant=participant,
             response=response,
         ))
 
     def _emit_partial_transcript_event(
         self,
         text: str,
-        participant: Optional[Union[Dict[str, Any], Participant]],
+        participant: Participant,
         response: TranscriptResponse,
     ):
         """
@@ -75,7 +75,7 @@ class STT(abc.ABC):
             session_id=self.session_id,
             plugin_name=self.provider_name,
             text=text,
-            user_metadata=participant,
+            participant=participant,
             response=response,
         ))
 
@@ -83,7 +83,7 @@ class STT(abc.ABC):
         self,
         error: Exception,
         context: str = "",
-        participant: Optional[Union[Dict[str, Any], Participant]] = None,
+        participant: Optional[Participant] = None,
     ):
         """
         Emit an error event. Note this should only be emitted for temporary errors.
@@ -94,7 +94,7 @@ class STT(abc.ABC):
             plugin_name=self.provider_name,
             error=error,
             context=context,
-            user_metadata=participant,
+            participant=participant,
             error_code=getattr(error, "error_code", None),
             is_recoverable=not isinstance(error, (SystemExit, KeyboardInterrupt)),
         ))

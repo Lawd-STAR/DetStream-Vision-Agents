@@ -249,7 +249,7 @@ class VAD(abc.ABC):
                         audio_data=current_bytes,
                         duration_ms=current_duration_ms,
                         frame_count=current_samples_len // self.frame_size,
-                        user_metadata=participant,
+                        participant=participant,
                     )
                 )
 
@@ -299,7 +299,7 @@ class VAD(abc.ABC):
                     speech_probability=speech_prob,
                     activation_threshold=self.activation_th,
                     frame_count=1,
-                    user_metadata=participant,
+                    participant=participant,
                 )
             )
 
@@ -343,7 +343,7 @@ class VAD(abc.ABC):
                     audio_data=speech_bytes,
                     duration_ms=speech_duration_ms,
                     frame_count=speech_samples // self.frame_size,
-                    user_metadata=user,
+                    participant=user,
                 )
             )
 
@@ -360,7 +360,7 @@ class VAD(abc.ABC):
                     deactivation_threshold=self.deactivation_th,
                     total_speech_duration_ms=total_speech_duration,
                     total_frames=self.total_speech_frames,
-                    user_metadata=user,
+                    participant=user,
                 )
             )
 
@@ -404,7 +404,7 @@ class VAD(abc.ABC):
                 plugin_name=self.provider_name,
                 error=error,
                 context=context,
-                user_metadata=user_metadata,
+                participant=user_metadata,
                 frame_data_available=(
                     self.speech_buffer is not None
                     and (

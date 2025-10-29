@@ -111,7 +111,7 @@ class Realtime(LLM, abc.ABC):
             plugin_name=self.provider_name,
             audio_data=audio_data,
             sample_rate=sample_rate,
-            user_metadata=user_metadata,
+            participant=user_metadata,
         )
         self.events.send(event)
 
@@ -126,7 +126,7 @@ class Realtime(LLM, abc.ABC):
             audio_data=audio_data,
             sample_rate=sample_rate,
             response_id=response_id,
-            user_metadata=user_metadata,
+            participant=user_metadata,
         )
         self.events.send(event)
 
@@ -146,7 +146,7 @@ class Realtime(LLM, abc.ABC):
             response_id=response_id,
             is_complete=is_complete,
             conversation_item_id=conversation_item_id,
-            user_metadata=user_metadata,
+            participant=user_metadata,
         )
         self.events.send(event)
 
@@ -162,7 +162,7 @@ class Realtime(LLM, abc.ABC):
             status=status,
             role=role,
             content=content,
-            user_metadata=user_metadata,
+            participant=user_metadata,
         )
         self.events.send(event)
 
@@ -173,7 +173,7 @@ class Realtime(LLM, abc.ABC):
             plugin_name=self.provider_name,
             error=error,
             context=context,
-            user_metadata=user_metadata,
+            participant=user_metadata,
         )
         self.events.send(event)
 
@@ -188,7 +188,7 @@ class Realtime(LLM, abc.ABC):
             plugin_name=self.provider_name,
             text=text,
             original=original,
-            user_metadata=self._current_participant,
+            participant=self._current_participant,
         )
         self.events.send(event)
 

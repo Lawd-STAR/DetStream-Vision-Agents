@@ -1,9 +1,8 @@
 import asyncio
-import atexit
 import os
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any
 
 import httpx
 from getstream.video.rtc.track_util import PcmData, AudioFormat
@@ -74,7 +73,7 @@ class SmartTurnDetection(TurnDetector):
         speech_probability_threshold: float = 0.5,
         pre_speech_buffer_ms: int = 200,
         silence_duration_ms: int = 3000,
-        options: AgentOptions = None,
+        options: Optional[AgentOptions] = None,
     ):
         """
         Initialize Smart Turn Detection.
@@ -107,8 +106,8 @@ class SmartTurnDetection(TurnDetector):
         self._tail_silence_ms = 0.0
 
         # Producer-consumer pattern: audio packets go into buffer, background task processes them
-        self._audio_queue = asyncio.Queue()
-        self._processing_task = None
+        self._audio_queue: asyncio.Queue[Any] = asyncio.Queue()
+        self._processing_task: Optional[asyncio.Task[Any]] = None
         self._shutdown_event = asyncio.Event()
 
         if options is None:
@@ -385,8 +384,8 @@ class SileroVAD:
         self.session = ort.InferenceSession(model_path, sess_options=opts)
         self.context_size = 64  # Silero uses 64-sample context at 16 kHz
         self.reset_interval_seconds = reset_interval_seconds
-        self._state = None
-        self._context = None
+        self._state: np.ndarray = np.zeros((2, 1, 128), dtype=np.float32)  # (2, B, 128)
+        self._context: np.ndarray = np.zeros((1, 64), dtype=np.float32)
         self._init_states()
 
     def _init_states(self):

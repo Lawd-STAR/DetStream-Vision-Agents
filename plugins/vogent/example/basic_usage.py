@@ -38,11 +38,13 @@ async def example_with_real_audio():
     # Register event handlers
     @detector.events.subscribe
     async def on_turn_started(event: TurnStartedEvent):
-        logger.info(f"🎤 Turn started: {event.participant.user_id}")
+        participant_id = event.participant.user_id if event.participant else "unknown"
+        logger.info(f"🎤 Turn started: {participant_id}")
     
     @detector.events.subscribe
     async def on_turn_ended(event: TurnEndedEvent):
-        logger.info(f"✅ Turn ended: {event.participant.user_id}")
+        participant_id = event.participant.user_id if event.participant else "unknown"
+        logger.info(f"✅ Turn ended: {participant_id}")
     
     # Start detection (loads models)
     logger.info("Starting turn detection...")
@@ -116,12 +118,14 @@ async def example_with_simulated_audio():
     
     @detector.events.subscribe
     async def on_turn_started(event: TurnStartedEvent):
-        logger.info(f"🎤 Turn started for {event.participant.user_id}")
+        participant_id = event.participant.user_id if event.participant else "unknown"
+        logger.info(f"🎤 Turn started for {participant_id}")
         event_log.append("start")
     
     @detector.events.subscribe
     async def on_turn_ended(event: TurnEndedEvent):
-        logger.info(f"✅ Turn ended for {event.participant.user_id}")
+        participant_id = event.participant.user_id if event.participant else "unknown"
+        logger.info(f"✅ Turn ended for {participant_id}")
         event_log.append("end")
     
     # Start detection

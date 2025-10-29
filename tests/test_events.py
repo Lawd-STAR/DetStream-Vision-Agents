@@ -380,7 +380,7 @@ async def test_track_published_event_with_participant_property():
     )
     
     # This should NOT raise "AttributeError: property 'participant' of 'TrackPublishedEvent' object has no setter"
-    wrapped_event = TrackPublishedEvent.from_proto(proto_published)
+    TrackPublishedEvent.from_proto(proto_published)
     
     received_events = []
     

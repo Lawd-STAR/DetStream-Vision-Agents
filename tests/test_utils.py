@@ -3,7 +3,7 @@ import tempfile
 import numpy as np
 import av
 from vision_agents.core.utils.utils import parse_instructions, Instructions
-from getstream.video.rtc.track_util import PcmData, AudioFormat
+from getstream.video.rtc.track_util import AudioFormat
 from vision_agents.core.utils.video_utils import ensure_even_dimensions
 from vision_agents.core.edge.types import PcmData
 

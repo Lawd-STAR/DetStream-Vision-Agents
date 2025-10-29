@@ -46,6 +46,7 @@ from opentelemetry.trace import set_span_in_context
 from opentelemetry.trace.propagation import Span, Context
 from opentelemetry import trace, context as otel_context
 from opentelemetry.trace import Tracer
+from opentelemetry.context import Token
 
 if TYPE_CHECKING:
     from vision_agents.plugins.getstream.stream_edge_transport import StreamEdge
@@ -130,15 +131,13 @@ class Agent:
         processors: Optional[List[Processor]] = None,
         # MCP servers for external tool and resource access
         mcp_servers: Optional[List[MCPBaseServer]] = None,
-        options: AgentOptions = None,
+        options: Optional[AgentOptions] = None,
     ):
         if options is None:
             options = default_agent_options()
         else:
             options = default_agent_options().update(options)
         self.options = options
-        if turn_detection is not None:
-            turn_detection.options = options
         self.instructions = instructions
         self.edge = edge
         self.agent_user = agent_user
@@ -164,6 +163,7 @@ class Agent:
         self.processors = processors or []
         self.mcp_servers = mcp_servers or []
         self._call_context_token: CallContextToken | None = None
+        self._context_token: Token[Context] | None = None
 
         # Initialize MCP manager if servers are provided
         self.mcp_manager = (
@@ -279,7 +279,7 @@ class Agent:
             if self.conversation is None:
                 return
 
-            with self.span("agent.on_llm_response_sync_conversation") as span:
+            with self.span("agent.on_llm_response_sync_conversation"):
                 # Unified API: handles both streaming and non-streaming
                 await self.conversation.upsert_message(
                     message_id=event.item_id,
@@ -301,7 +301,7 @@ class Agent:
             if self.conversation is None:
                 return
 
-            with self.span("agent._handle_output_text_delta") as span:
+            with self.span("agent._handle_output_text_delta"):
                 await self.conversation.upsert_message(
                     message_id=event.item_id,
                     role="assistant",
@@ -312,6 +312,7 @@ class Agent:
                 )
 
     async def _setup_speech_events(self):
+        self.logger.info("_setup_speech_events")
         @self.events.subscribe
         async def on_error(event: STTErrorEvent):
             self.logger.error("stt error event %s", event)
@@ -327,7 +328,7 @@ class Agent:
             if user_id is None:
                 raise ValueError("missing user_id")
 
-            with self.span("agent.on_stt_transcript_event_sync_conversation") as span:
+            with self.span("agent.on_stt_transcript_event_sync_conversation"):
                 await self.conversation.upsert_message(
                     message_id=str(uuid.uuid4()),
                     role="user",
@@ -347,7 +348,7 @@ class Agent:
             if self.conversation is None or not event.text:
                 return
 
-            with self.span("agent.on_realtime_user_speech_transcription") as span:
+            with self.span("agent.on_realtime_user_speech_transcription"):
                 await self.conversation.upsert_message(
                     message_id=str(uuid.uuid4()),
                     role="user",
@@ -367,7 +368,7 @@ class Agent:
             if self.conversation is None or not event.text:
                 return
 
-            with self.span("agent.on_realtime_agent_speech_transcription") as span:
+            with self.span("agent.on_realtime_agent_speech_transcription"):
                 await self.conversation.upsert_message(
                     message_id=str(uuid.uuid4()),
                     role="assistant",
@@ -410,15 +411,18 @@ class Agent:
             else:
                 # Without turn detection: trigger LLM immediately on transcript completion
                 # This is the traditional STT -> LLM flow
-                with self.span("agent.on_stt_transcript_event_create_response") as span:
+                with self.span("agent.on_stt_transcript_event_create_response"):
                     await self.simple_response(event.text, event.participant)
 
     async def join(self, call: Call) -> "AgentSessionContextManager":
         # TODO: validation. join can only be called once
+        self.logger.info("joining call")
         self.start_tracing()
 
-        self._root_span.set_attribute("call_id", call.id)
-        self._root_span.set_attribute("agent_id", self.agent_user.id)
+        if self._root_span:
+            self._root_span.set_attribute("call_id", call.id)
+            if self.agent_user.id:
+                self._root_span.set_attribute("agent_id", self.agent_user.id)
 
         if self._is_running:
             raise RuntimeError("Agent is already running")
@@ -498,7 +502,7 @@ class Agent:
         no connection is active, returns immediately.
         """
 
-        with self.span("agent.finish") as span:
+        with self.span("agent.finish"):
             # If connection is None or already closed, return immediately
             if not self._connection:
                 logging.info(
@@ -572,7 +576,7 @@ class Agent:
 
         # Stop turn detection
         if self.turn_detection:
-            self.turn_detection.stop()
+            await self.turn_detection.stop()
 
         # Stop audio track
         if self._audio_track:
@@ -737,12 +741,13 @@ class Agent:
             pcm = event.pcm_data
             participant = event.participant
 
-            if self.turn_detection is not None:
+            if self.turn_detection is not None and participant is not None:
                 await self.turn_detection.process_audio(
                     pcm, participant, conversation=self.conversation
                 )
 
-            await self._reply_to_audio(pcm, participant)
+            if participant is not None:
+                await self._reply_to_audio(pcm, participant)
 
         # Always listen to remote video tracks so we can forward frames to Realtime providers
         @self.edge.events.subscribe
@@ -1031,17 +1036,20 @@ class Agent:
                     except Exception as e:
                         self.logger.error(f"Error stopping TTS: {e}")
                 else:
+                    participant_id = event.participant.user_id if event.participant else "unknown"
                     self.logger.info(
-                        f"👉 Turn started - participant speaking {event.participant.user_id} : {event.confidence}"
+                        f"👉 Turn started - participant speaking {participant_id} : {event.confidence}"
                     )
             else:
                 # Agent itself started speaking - this is normal
+                participant_id = event.participant.user_id if event.participant else "unknown"
                 self.logger.debug(
-                    f"👉 Turn started - agent speaking {event.participant.user_id}"
+                    f"👉 Turn started - agent speaking {participant_id}"
                 )
         elif isinstance(event, TurnEndedEvent):
+            participant_id = event.participant.user_id if event.participant else "unknown"
             self.logger.info(
-                f"👉 Turn ended - participant {event.participant.user_id} finished (confidence: {event.confidence})"
+                f"👉 Turn ended - participant {participant_id} finished (confidence: {event.confidence})"
             )
 
             # When turn detection is enabled, trigger LLM response when user's turn ends

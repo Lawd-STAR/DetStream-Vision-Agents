@@ -1,6 +1,5 @@
 import logging
 import os
-import time
 from typing import Optional, Dict, Any
 import asyncio
 
@@ -13,8 +12,6 @@ from vision_agents.core.turn_detection import (
     TurnDetector,
     TurnStartedEvent,
     TurnEndedEvent,
-    TurnEvent,
-    TurnEventData,
 )
 
 
@@ -164,14 +161,6 @@ class TurnDetection(TurnDetector):
                         custom=metadata or {},
                     )
                     self.events.send(event)
-                    # Emit deprecated event for backward compatibility
-                    event_data = TurnEventData(
-                        timestamp=time.time(),
-                        participant=user_id,
-                        confidence=score,
-                        custom=metadata or {},
-                    )
-                    self._emit_turn_event(TurnEvent.TURN_STARTED, event_data)
                 elif self._turn_in_progress and score > self.turn_end_threshold:
                     self._turn_in_progress = False
                     # Emit new event
@@ -183,14 +172,6 @@ class TurnDetection(TurnDetector):
                         custom=metadata or {},
                     )
                     self.events.send(event)
-                    # Emit deprecated event for backward compatibility
-                    event_data = TurnEventData(
-                        timestamp=time.time(),
-                        participant=user_id,
-                        confidence=score,
-                        custom=metadata or {},
-                    )
-                    self._emit_turn_event(TurnEvent.TURN_ENDED, event_data)
 
         self._buffer.extend(pcm.samples.tobytes())
         while len(self._buffer) >= frame_bytes:
@@ -199,7 +180,7 @@ class TurnDetection(TurnDetector):
             frame = np.frombuffer(frame_b, dtype=np.int16)
             process_frame(frame)
 
-    def start(self) -> None:
+    async def start(self) -> None:
         if self._is_detecting:
             return
         self._initialize_krisp()
@@ -207,7 +188,7 @@ class TurnDetection(TurnDetector):
         self._is_detecting = True
         self.logger.info("KrispTurnDetection started")
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         if not self._is_detecting:
             return
         self._is_detecting = False

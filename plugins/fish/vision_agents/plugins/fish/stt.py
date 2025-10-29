@@ -124,7 +124,8 @@ class STT(stt.STT):
                 },
             )
 
-            self._emit_transcript_event(transcript_text, participant, response_metadata)
+            if participant is not None:
+                self._emit_transcript_event(transcript_text, participant, response_metadata)
 
         except Exception as e:
             logger.error(

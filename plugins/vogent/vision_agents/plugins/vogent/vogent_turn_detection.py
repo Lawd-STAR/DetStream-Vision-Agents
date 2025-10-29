@@ -1,12 +1,12 @@
 import asyncio
 import os
 import time
-from typing import Optional
+from typing import Optional, Any
 
 import httpx
 import numpy as np
 from faster_whisper import WhisperModel
-from getstream.video.rtc.track_util import AudioFormat, PcmData
+from getstream.video.rtc.track_util import PcmData
 from vogent_turn import TurnDetector as VogentDetector
 
 from vision_agents.core.agents import Conversation
@@ -55,6 +55,7 @@ class VogentTurnDetection(TurnDetector):
         silence_duration_ms: int = 1000,
         max_segment_duration_seconds: int = 8,
         vogent_threshold: float = 0.5,
+        model_dir: str = "/tmp/vogent_models",
     ):
         """
         Initialize Vogent Turn Detection.
@@ -67,6 +68,7 @@ class VogentTurnDetection(TurnDetector):
             silence_duration_ms: Duration of trailing silence in ms before ending a turn
             max_segment_duration_seconds: Maximum duration in seconds for a single audio segment
             vogent_threshold: Threshold for vogent turn completion probability (0.0-1.0)
+            model_dir: Directory to store model files
         """
         super().__init__()
         
@@ -78,16 +80,17 @@ class VogentTurnDetection(TurnDetector):
         self.silence_duration_ms = silence_duration_ms
         self.max_segment_duration_seconds = max_segment_duration_seconds
         self.vogent_threshold = vogent_threshold
+        self.model_dir = model_dir
         
         # Use AudioSegmentCollector for automatic pre/post buffering and segment assembly
         # TODO: remove colector
-        self.collector = AudioSegmentCollector(
-            pre_speech_ms=self.pre_speech_buffer_ms,
-            post_speech_ms=self.silence_duration_ms,
-            max_duration_s=self.max_segment_duration_seconds,
-            sample_rate=RATE,
-            format=AudioFormat.F32,
-        )
+        # self.collector = AudioSegmentCollector(
+        #     pre_speech_ms=self.pre_speech_buffer_ms,
+        #     post_speech_ms=self.silence_duration_ms,
+        #     max_duration_s=self.max_segment_duration_seconds,
+        #     sample_rate=RATE,
+        #     format=AudioFormat.F32,
+        # )
         
         # Track turn state
         self.turn_in_progress = False
@@ -102,7 +105,7 @@ class VogentTurnDetection(TurnDetector):
     async def start(self):
         """Initialize models and prepare for turn detection."""
         # Ensure model directory exists
-        os.makedirs(self.options.model_dir, exist_ok=True)
+        os.makedirs(self.model_dir, exist_ok=True)
         
         # Prepare models in parallel
         await asyncio.gather(
@@ -111,41 +114,37 @@ class VogentTurnDetection(TurnDetector):
             self._prepare_vogent(),
         )
 
-    async def _prepare_silero_vad(self):
+    async def _prepare_silero_vad(self) -> None:
         """Load Silero VAD model for speech detection."""
-        path = os.path.join(self.options.model_dir, SILERO_ONNX_FILENAME)
+        path = os.path.join(self.model_dir, SILERO_ONNX_FILENAME)
         await ensure_model(path, SILERO_ONNX_URL)
         # Initialize VAD in thread pool to avoid blocking event loop
         self.vad = await asyncio.to_thread(
-            SileroVAD, 
-            path,
-            reset_interval_seconds=self.vad_reset_interval_seconds
+            lambda: SileroVAD(path, reset_interval_seconds=self.vad_reset_interval_seconds)  # type: ignore
         )
 
-    async def _prepare_whisper(self):
+    async def _prepare_whisper(self) -> None:
         """Load faster-whisper model for transcription."""
         logger.info(f"Loading faster-whisper model: {self.whisper_model_size}")
         # Load whisper in thread pool to avoid blocking event loop
-        self.whisper = await asyncio.to_thread(
-            WhisperModel,
-            self.whisper_model_size,
-            device="cpu",
-            compute_type="int8",
+        self.whisper = await asyncio.to_thread(  # type: ignore[func-returns-value]
+            lambda: WhisperModel(self.whisper_model_size, device="cpu", compute_type="int8")
         )
         logger.info("Faster-whisper model loaded")
 
-    async def _prepare_vogent(self):
+    async def _prepare_vogent(self) -> None:
         """Load Vogent turn detection model."""
         logger.info("Loading Vogent turn detection model")
         # Load vogent in thread pool to avoid blocking event loop
         # Note: compile_model=False to avoid torch.compile issues with edge cases
-        self.vogent = await asyncio.to_thread(
-            VogentDetector,
-            compile_model=True,
-            warmup=True,
-            device=None,
-            model_name="vogent/Vogent-Turn-80M",
-            revision = "main",
+        self.vogent = await asyncio.to_thread(  # type: ignore[func-returns-value]
+            lambda: VogentDetector(
+                compile_model=True,
+                warmup=True,
+                device=None,
+                model_name="vogent/Vogent-Turn-80M",
+                revision="main",
+            )
         )
         logger.info("Vogent turn detection model loaded")
 
@@ -167,11 +166,13 @@ class VogentTurnDetection(TurnDetector):
         pcm = audio_data.resample(RATE).to_float32()
 
         # Track segments for final turn-end processing
-        segments_to_process = []
+        segments_to_process: list[Any] = []
 
         # Process audio in 512-sample chunks for VAD
         for chunk in pcm.chunks(chunk_size=CHUNK):
             # Run VAD on the chunk
+            if self.vad is None:
+                continue
             is_speech = self.vad.predict_speech(chunk.samples) > self.speech_probability_threshold
 
             # Emit turn start on first speech detection
@@ -181,11 +182,11 @@ class VogentTurnDetection(TurnDetector):
                 self.current_transcription = ""
 
             # Feed chunk to collector, which handles pre/post buffering
-            segment = self.collector.add_chunk(chunk, is_speech=is_speech)
+            # segment = self.collector.add_chunk(chunk, is_speech=is_speech)
 
             # Collect segments for processing
-            if segment is not None:
-                segments_to_process.append(segment)
+            # if segment is not None:
+            #     segments_to_process.append(segment)
 
         # Process all collected segments
         for segment in segments_to_process:
@@ -212,7 +213,7 @@ class VogentTurnDetection(TurnDetector):
                 )
 
         # End turn if we're in a turn and collector is done (silence detected)
-        if self.turn_in_progress and not self.collector.is_collecting:
+        if self.turn_in_progress and False:  # TODO: restore collector logic
             # Final check with vogent before ending turn
             if self.current_transcription and self.current_transcription.strip():
                 prev_line = self._get_previous_line(conversation)
@@ -257,6 +258,9 @@ class VogentTurnDetection(TurnDetector):
         pcm = pcm.resample(16000).to_float32()
         audio_array = pcm.samples
         
+        if self.whisper is None:
+            return ""
+        
         # Run transcription in thread pool to avoid blocking
         segments, info = await asyncio.to_thread(
             self.whisper.transcribe,
@@ -296,6 +300,9 @@ class VogentTurnDetection(TurnDetector):
 
         # Truncate to 8 seconds
         audio_array = pcm.tail(8, False).samples
+        
+        if self.vogent is None:
+            return False
         
         # Run vogent prediction in thread pool
         result = await asyncio.to_thread(
@@ -366,8 +373,8 @@ class SileroVAD:
         )
         self.context_size = 64  # Silero uses 64-sample context at 16 kHz
         self.reset_interval_seconds = reset_interval_seconds
-        self._state = None
-        self._context = None
+        self._state: np.ndarray = np.zeros((2, 1, 128), dtype=np.float32)  # (2, B, 128)
+        self._context: np.ndarray = np.zeros((1, 64), dtype=np.float32)
         self._init_states()
 
     def _init_states(self):

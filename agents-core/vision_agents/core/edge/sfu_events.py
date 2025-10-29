@@ -1492,7 +1492,7 @@ class ParticipantJoinedEvent(BaseEvent):
             return None
         return getattr(self.payload, "call_cid", None)
 
-    @property
+    @property  # type: ignore[misc]
     def participant(self) -> Optional[Participant]:  # type: ignore[override]
         """Access participant field from the protobuf payload."""
         if self.payload is None:
@@ -1500,7 +1500,7 @@ class ParticipantJoinedEvent(BaseEvent):
         proto_val = getattr(self.payload, "participant", None)
         return Participant.from_proto(proto_val) if proto_val is not None else None
     
-    @participant.setter
+    @participant.setter  # type: ignore[misc]
     def participant(self, value: Optional[Participant]) -> None:
         """Setter for participant to satisfy dataclass __init__."""
         # Store in _participant but don't use it (payload takes precedence)
@@ -1541,7 +1541,7 @@ class ParticipantLeftEvent(BaseEvent):
             return None
         return getattr(self.payload, "call_cid", None)
 
-    @property
+    @property  # type: ignore[misc]
     def participant(self) -> Optional[Participant]:  # type: ignore[override]
         """Access participant field from the protobuf payload."""
         if self.payload is None:
@@ -1549,7 +1549,7 @@ class ParticipantLeftEvent(BaseEvent):
         proto_val = getattr(self.payload, "participant", None)
         return Participant.from_proto(proto_val) if proto_val is not None else None
     
-    @participant.setter
+    @participant.setter  # type: ignore[misc]
     def participant(self, value: Optional[Participant]) -> None:
         """Setter for participant to satisfy dataclass __init__."""
         # Store in _participant but don't use it (payload takes precedence)
@@ -1621,7 +1621,7 @@ class ParticipantUpdatedEvent(BaseEvent):
             return None
         return getattr(self.payload, "call_cid", None)
 
-    @property
+    @property  # type: ignore[misc]
     def participant(self) -> Optional[Participant]:  # type: ignore[override]
         """Access participant field from the protobuf payload."""
         if self.payload is None:
@@ -1629,7 +1629,7 @@ class ParticipantUpdatedEvent(BaseEvent):
         proto_val = getattr(self.payload, "participant", None)
         return Participant.from_proto(proto_val) if proto_val is not None else None
     
-    @participant.setter
+    @participant.setter  # type: ignore[misc]
     def participant(self, value: Optional[Participant]) -> None:
         """Setter for participant to satisfy dataclass __init__."""
         # Store in _participant but don't use it (payload takes precedence)
@@ -2096,7 +2096,7 @@ class TrackPublishedEvent(BaseEvent):
             return None
         return getattr(self.payload, "user_id", None)
 
-    @property
+    @property  # type: ignore[misc]
     def participant(self) -> Optional[Participant]:  # type: ignore[override]
         """Access participant field from the protobuf payload."""
         if self.payload is None:
@@ -2104,7 +2104,7 @@ class TrackPublishedEvent(BaseEvent):
         proto_val = getattr(self.payload, "participant", None)
         return Participant.from_proto(proto_val) if proto_val is not None else None
     
-    @participant.setter
+    @participant.setter  # type: ignore[misc]
     def participant(self, value: Optional[Participant]) -> None:
         """Setter for participant to satisfy dataclass __init__."""
         # Store in _participant but don't use it (payload takes precedence)
@@ -2152,7 +2152,7 @@ class TrackUnpublishedEvent(BaseEvent):
             return None
         return getattr(self.payload, "cause", None)
 
-    @property
+    @property  # type: ignore[misc]
     def participant(self) -> Optional[Participant]:  # type: ignore[override]
         """Access participant field from the protobuf payload."""
         if self.payload is None:
@@ -2160,7 +2160,7 @@ class TrackUnpublishedEvent(BaseEvent):
         proto_val = getattr(self.payload, "participant", None)
         return Participant.from_proto(proto_val) if proto_val is not None else None
     
-    @participant.setter
+    @participant.setter  # type: ignore[misc]
     def participant(self, value: Optional[Participant]) -> None:
         """Setter for participant to satisfy dataclass __init__."""
         # Store in _participant but don't use it (payload takes precedence)

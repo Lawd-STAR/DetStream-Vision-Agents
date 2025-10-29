@@ -1,3 +1,8 @@
+"""
+Base VAD implementation. Avoids external audio utils and relies on PcmData
+for serialization where needed.
+"""
+
 import abc
 import logging
 import time
@@ -8,11 +13,6 @@ import numpy as np
 
 from getstream.video.rtc.track_util import PcmData
 from vision_agents.core.events.manager import EventManager
-"""
-Base VAD implementation. Avoids external audio utils and relies on PcmData
-for serialization where needed.
-"""
-
 from ..edge.types import Participant
 
 from . import events

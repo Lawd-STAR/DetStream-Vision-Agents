@@ -1,6 +1,5 @@
-from typing import Optional, Dict, Any, Callable
+from typing import Optional
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from enum import Enum
 import uuid
 from getstream.video.rtc.track_util import PcmData
@@ -21,8 +20,6 @@ class TurnEvent(Enum):
 
 class TurnDetector(ABC):
     """Base implementation for turn detection with common functionality."""
-
-    options: "AgentOptions"
 
     def __init__(
         self, 

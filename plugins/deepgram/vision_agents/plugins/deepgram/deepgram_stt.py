@@ -1,9 +1,9 @@
 import asyncio
+import json
 import logging
 import os
-from typing import Optional
+from typing import Optional, Any
 
-import numpy as np
 from deepgram import AsyncDeepgramClient
 from getstream.video.rtc.track_util import PcmData
 
@@ -37,6 +37,7 @@ class STT(stt.STT):
         eot_threshold: Optional[float] = None,
         eager_eot_threshold: Optional[float] = None,
         client: Optional[AsyncDeepgramClient] = None,
+        keepalive: bool = True,
     ):
         """
         Initialize Deepgram STT.
@@ -48,10 +49,10 @@ class STT(stt.STT):
             eot_threshold: End-of-turn threshold for determining when a turn is complete.
             eager_eot_threshold: Eager end-of-turn threshold for faster turn detection.
             client: Optional pre-configured AsyncDeepgramClient instance.
+            keepalive: Whether to send keepalive messages to keep connection open (default: True).
         """
         super().__init__(provider_name="deepgram")
 
-        self._current_participant = None
         if not api_key:
             api_key = os.environ.get("DEEPGRAM_API_KEY")
 
@@ -68,9 +69,13 @@ class STT(stt.STT):
         self.language = language
         self.eot_threshold = eot_threshold
         self.eager_eot_threshold = eager_eot_threshold
-        self.connection = None
+        self.keepalive = keepalive
+        self._current_participant: Optional[Participant] = None
+        self.connection: Optional[Any] = None
         self._connection_ready = asyncio.Event()
-        self._connection_context = None
+        self._connection_context: Optional[Any] = None
+        self._listening_task: Optional[asyncio.Task[Any]] = None
+        self._keepalive_task: Optional[asyncio.Task[Any]] = None
 
     async def process_audio(
         self,
@@ -98,6 +103,11 @@ class STT(stt.STT):
         # Wait for connection to be ready
         await self._connection_ready.wait()
 
+        # Double-check connection is still ready (could have closed while waiting)
+        if not self._connection_ready.is_set():
+            logger.warning("Deepgram connection closed while processing audio")
+            return
+
         # Resample to 16kHz mono (recommended by Deepgram)
         resampled_pcm = pcm_data.resample(16_000, 1)
 
@@ -106,7 +116,13 @@ class STT(stt.STT):
 
         self._current_participant = participant
 
-        await self.connection.send_media(audio_bytes)
+        try:
+            if self.connection is not None:
+                await self.connection.send_media(audio_bytes)
+        except Exception as e:
+            # Connection closed - log but don't crash
+            logger.warning(f"Failed to send audio to Deepgram: {e}")
+            self._connection_ready.clear()
 
     async def _start(self):
         """
@@ -140,12 +156,19 @@ class STT(stt.STT):
             )
 
             # Register event handlers
-            self.connection.on("message", self._on_message)
-            self.connection.on("error", self._on_error)
-            self.connection.on("close", self._on_close)
+            if self.connection is not None:
+                self.connection.on("message", self._on_message)
+                self.connection.on("error", self._on_error)
+                self.connection.on("close", self._on_close)
 
-            # Start listening - this internally handles the message loop
-            asyncio.create_task(self.connection.start_listening())
+                # Start listening - track the task so we can detect if it fails
+                self._listening_task = asyncio.create_task(
+                    self._start_listening_with_error_handling()
+                )
+                
+                # Start keepalive if enabled
+                if self.keepalive:
+                    self._keepalive_task = asyncio.create_task(self._keepalive_loop())
 
             # Mark connection as ready
             self._connection_ready.set()
@@ -188,11 +211,49 @@ class STT(stt.STT):
         logger.error(f"Deepgram WebSocket error: {error}")
         raise Exception(f"Deepgram WebSocket error {error}")
 
-    def _on_close(self, _):
+    def _on_close(self, error):
         """
         Event handler for connection close.
         """
+        logger.warning(f"Deepgram WebSocket connection closed: {error}")
         self._connection_ready.clear()
+        
+        # Cancel keepalive task if running
+        if self._keepalive_task and not self._keepalive_task.done():
+            self._keepalive_task.cancel()
+    
+    async def _start_listening_with_error_handling(self):
+        """
+        Wrapper around start_listening that handles errors and logs them.
+        """
+        try:
+            if self.connection:
+                await self.connection.start_listening()
+        except Exception as e:
+            logger.error(f"Deepgram listening loop failed: {e}", exc_info=True)
+            self._connection_ready.clear()
+    
+    async def _keepalive_loop(self):
+        """
+        Send keepalive messages periodically to keep the connection alive.
+        Deepgram closes connections after ~10 seconds of no audio.
+        """
+        try:
+            while not self.closed and self._connection_ready.is_set():
+                await asyncio.sleep(5)  # Send keepalive every 5 seconds
+                if self.connection and self._connection_ready.is_set():
+                    try:
+                        # Send as JSON string instead of dict to avoid .dict() error
+                        keepalive_msg = json.dumps({"type": "KeepAlive"})
+                        await self.connection._send(keepalive_msg)
+                        logger.debug("Sent keepalive to Deepgram")
+                    except Exception as e:
+                        logger.warning(f"Failed to send keepalive: {e}")
+                        break
+        except asyncio.CancelledError:
+            logger.debug("Keepalive task cancelled")
+        except Exception as e:
+            logger.error(f"Keepalive loop error: {e}", exc_info=True)
 
     async def _handle_turn_info_message(self, message):
         """
@@ -244,6 +305,10 @@ class STT(stt.STT):
         # Use the participant from the most recent process_audio call
         participant = self._current_participant
 
+        if participant is None:
+            logger.warning("Received transcript but no participant set")
+            return
+
         if is_final:
             # Final transcript (event == "EndOfTurn")
             self._emit_transcript_event(
@@ -263,6 +328,22 @@ class STT(stt.STT):
         """
         # Mark as closed first
         await super().close()
+        
+        # Cancel keepalive task
+        if self._keepalive_task and not self._keepalive_task.done():
+            self._keepalive_task.cancel()
+            try:
+                await self._keepalive_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Cancel listening task
+        if self._listening_task and not self._listening_task.done():
+            self._listening_task.cancel()
+            try:
+                await self._listening_task
+            except asyncio.CancelledError:
+                pass
 
         # Close connection
         if self.connection and self._connection_context:

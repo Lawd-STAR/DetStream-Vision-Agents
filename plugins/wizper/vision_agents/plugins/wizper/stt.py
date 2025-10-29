@@ -111,7 +111,7 @@ class STT(stt.STT):
                 )
                 if "text" in result:
                     text = result["text"].strip()
-                    if text:
+                    if text and participant is not None:
                         response_metadata = TranscriptResponse()
                         self._emit_transcript_event(
                             text, participant, response_metadata

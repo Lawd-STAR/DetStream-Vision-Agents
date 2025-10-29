@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Optional, List, TYPE_CHECKING, Any, Dict
 import json
 import boto3
@@ -73,6 +74,10 @@ class BedrockLLM(LLM):
         self.client = boto3.client("bedrock-runtime", **session_kwargs)
 
         self.region_name = region_name
+        self.logger = logging.getLogger(__name__)
+        if not self.logger.handlers:
+            self.logger = logging.getLogger()
+        self.logger.setLevel(logging.INFO)
 
     async def simple_response(
         self,
@@ -92,6 +97,9 @@ class BedrockLLM(LLM):
         
             await llm.simple_response("say hi to the user")
         """
+        self.logger.debug(f"simple_response called with text: {text[:100]}...")
+        registered_tools = self.get_available_functions()
+        self.logger.debug(f"Available functions: {len(registered_tools)} - {[t.get('name') for t in registered_tools]}")
         return await self.converse_stream(
             messages=[{"role": "user", "content": [{"text": text}]}]
         )
@@ -107,9 +115,11 @@ class BedrockLLM(LLM):
         # Add tools if available
         tools = self.get_available_functions()
         if tools:
+            converted_tools = self._convert_tools_to_provider_format(tools)
             kwargs["toolConfig"] = {
-                "tools": self._convert_tools_to_provider_format(tools)
+                "tools": converted_tools
             }
+            self.logger.debug(f"Added {len(tools)} tools to converse request")
 
         # Combine original instructions with markdown file contents
         enhanced_instructions = self._build_enhanced_instructions()
@@ -127,16 +137,37 @@ class BedrockLLM(LLM):
                 self._conversation.messages.append(msg)
 
         try:
+            # Capture system message for use in follow-up calls
+            system_param = kwargs.get("system")
+            
+            # Log initial request details
+            self.logger.debug(f"Making converse request with {len(kwargs.get('messages', []))} messages")
+            if kwargs.get("toolConfig"):
+                tool_count = len(kwargs["toolConfig"].get("tools", []))
+                self.logger.info(f"Request includes {tool_count} tools")
+            
             response = self.client.converse(**kwargs)
             
             # Extract text from response
             text = self._extract_text_from_response(response)
             llm_response = LLMResponseEvent(response, text)
             
+            self.logger.debug(f"Initial response text length: {len(text)}")
+            
             # Handle tool calls if present
             function_calls = self._extract_tool_calls_from_response(response)
             if function_calls:
+                self.logger.debug(f"Extracted {len(function_calls)} tool calls from response")
+                for i, fc in enumerate(function_calls):
+                    self.logger.debug(f"  Tool call {i+1}: {fc.get('name')} with args: {fc.get('arguments_json')}")
                 messages = kwargs["messages"][:]
+                
+                # Add assistant message from response (contains toolUse blocks)
+                assistant_msg_from_response = response.get('output', {}).get('message', {})
+                if assistant_msg_from_response:
+                    messages.append(assistant_msg_from_response)
+                    self.logger.debug("Added assistant message from response to conversation history")
+                
                 MAX_ROUNDS = 3
                 rounds = 0
                 seen: set[tuple[str, str, str]] = set()
@@ -147,62 +178,131 @@ class BedrockLLM(LLM):
                     triples, seen = await self._dedup_and_execute(current_calls, seen=seen, max_concurrency=8, timeout_s=30)  # type: ignore[arg-type]
                     
                     if not triples:
+                        self.logger.warning("No tool execution results despite tool calls")
                         break
                     
+                    self.logger.debug(f"Executed {len(triples)} tool calls, processing results")
+                    
                     # Build tool result message
+                    # According to AWS Bedrock Converse API, toolResult content should use {"text": "..."} format
                     tool_result_blocks = []
                     for tc, res, err in triples:
-                        payload = self._sanitize_tool_output(res)
+                        if err:
+                            self.logger.error(f"Tool {tc['name']} execution error: {err}")
+                            tool_response = str(err)
+                        else:
+                            # Convert result to string format (AWS expects text, not json content type)
+                            if isinstance(res, (dict, list)):
+                                tool_response = json.dumps(res)
+                            elif isinstance(res, str):
+                                tool_response = res
+                            else:
+                                tool_response = str(res)
+                        
                         tool_result_blocks.append({
                             "toolUseId": tc["id"],
-                            "content": [{"json": payload if isinstance(payload, dict) else {"result": payload}}],
+                            "content": [{"text": tool_response}],
                         })
 
-                    # Add assistant message with tool use and user message with tool results
-                    assistant_msg = {
-                        "role": "assistant",
-                        "content": [
-                            {
-                                "toolUse": {
-                                    "toolUseId": tc["id"],
-                                    "name": tc["name"],
-                                    "input": tc["arguments_json"],
-                                }
-                            }
-                            for tc, _, _ in triples
-                        ]
-                    }
+                    # Add user message with tool results only
+                    # Assistant message was already added from response before the loop
                     user_tool_results_msg = {
                         "role": "user",
                         "content": [{"toolResult": tr} for tr in tool_result_blocks]
                     }
-                    messages = messages + [assistant_msg, user_tool_results_msg]
-
-                    # Ask again WITH tools
-                    follow_up_response = self.client.converse(
-                        modelId=self.model,
-                        messages=messages,
-                        toolConfig=kwargs.get("toolConfig", {}),
-                    )
+                    messages = messages + [user_tool_results_msg]
                     
-                    # Extract new tool calls
+                    self.logger.debug(f"Sending {len(tool_result_blocks)} tool results back to model")
+
+                    # Build follow-up request parameters
+                    follow_up_kwargs = {
+                        "modelId": self.model,
+                        "messages": messages,
+                        "toolConfig": kwargs.get("toolConfig", {}),
+                    }
+                    # Include system message if it was provided
+                    if system_param:
+                        follow_up_kwargs["system"] = system_param
+                    
+                    # Ask again WITH tools
+                    try:
+                        self.logger.debug(f"Sending follow-up request with tool results (round {rounds + 1})")
+                        follow_up_response = self.client.converse(**follow_up_kwargs)
+                    except ClientError as e:
+                        self.logger.error(f"AWS Bedrock API error in follow-up call: {e}")
+                        error_code = e.response.get('Error', {}).get('Code', 'Unknown') if hasattr(e, 'response') else 'Unknown'
+                        self.logger.error(f"Error code: {error_code}, Full error: {str(e)}")
+                        raise
+                    
+                    # Extract new tool calls and text from follow-up response
                     current_calls = self._extract_tool_calls_from_response(follow_up_response)
-                    llm_response = LLMResponseEvent(follow_up_response, self._extract_text_from_response(follow_up_response))
+                    follow_up_text = self._extract_text_from_response(follow_up_response)
+                    llm_response = LLMResponseEvent(follow_up_response, follow_up_text)
+                    
+                    self.logger.debug(f"Follow-up response: {len(current_calls)} tool calls, text length: {len(follow_up_text)}")
+                    
+                    # Add assistant message from follow-up response if there are more tool calls
+                    if current_calls:
+                        assistant_msg_from_follow_up = follow_up_response.get('output', {}).get('message', {})
+                        if assistant_msg_from_follow_up:
+                            messages.append(assistant_msg_from_follow_up)
+                            self.logger.debug("Added assistant message from follow-up response to conversation history")
+                    
+                    # If follow-up already has text and no more tool calls, we're done!
+                    if follow_up_text and not current_calls:
+                        self.logger.debug("Follow-up response contains text with no tool calls, using as final response")
+                        text = follow_up_text
+                        break
+                    
                     rounds += 1
                 
-                # Final pass without tools
-                if current_calls or rounds > 0:
-                    final_response = self.client.converse(
-                        modelId=self.model,
-                        messages=messages,
-                    )
-                    llm_response = LLMResponseEvent(final_response, self._extract_text_from_response(final_response))
+                # Final pass without tools ONLY if we still have pending tool calls
+                if current_calls:
+                    self.logger.debug("Performing final pass without tools to get text response")
+                    final_kwargs = {
+                        "modelId": self.model,
+                        "messages": messages,
+                    }
+                    # Include system message if it was provided
+                    if system_param:
+                        final_kwargs["system"] = system_param
+                    
+                    try:
+                        self.logger.info("Making final pass request without tools")
+                        final_response = self.client.converse(**final_kwargs)
+                    except ClientError as e:
+                        self.logger.error(f"AWS Bedrock API error in final pass: {e}")
+                        error_code = e.response.get('Error', {}).get('Code', 'Unknown') if hasattr(e, 'response') else 'Unknown'
+                        self.logger.error(f"Error code: {error_code}, Full error: {str(e)}")
+                        raise
+                    
+                    final_text = self._extract_text_from_response(final_response)
+                    llm_response = LLMResponseEvent(final_response, final_text)
+                    text = final_text
+                    self.logger.info(f"Final response text length: {len(final_text)}")
+                elif rounds > 0:
+                    # We had tool calls but follow-up gave us text, use that
+                    text = llm_response.text if llm_response.text else text
             
-            self.events.send(LLMResponseCompletedEvent(original=response, text=text, plugin_name="aws"))
+            # Use final response text if available, otherwise original text
+            final_text_for_event = llm_response.text if hasattr(llm_response, 'text') and llm_response.text else text
+            original_for_event = llm_response.original if hasattr(llm_response, 'original') and llm_response.original else response
+            
+            self.logger.info(f"Emitting LLMResponseCompletedEvent with text length: {len(final_text_for_event)}")
+            if not final_text_for_event:
+                self.logger.warning("Final response text is empty - model may not have responded")
+            
+            self.events.send(LLMResponseCompletedEvent(original=original_for_event, text=final_text_for_event, plugin_name="aws"))
 
         except ClientError as e:
-            error_msg = f"AWS Bedrock API error: {str(e)}"
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown') if hasattr(e, 'response') else 'Unknown'
+            error_msg = e.response.get('Error', {}).get('Message', str(e)) if hasattr(e, 'response') else str(e)
+            self.logger.error(f"AWS Bedrock API error: {error_code} - {error_msg}")
+            self.logger.error(f"Full error details: {e}")
             llm_response = LLMResponseEvent(None, error_msg, exception = e)
+        except Exception as e:
+            self.logger.error(f"Unexpected error in converse: {type(e).__name__}: {str(e)}", exc_info=True)
+            llm_response = LLMResponseEvent(None, f"Unexpected error: {str(e)}", exception = e)
             
         return llm_response
 
@@ -210,15 +310,20 @@ class BedrockLLM(LLM):
         """
         Streaming version of converse using Bedrock's ConverseStream API.
         """
+        self.logger.info("converse_stream called")
         if "modelId" not in kwargs:
             kwargs["modelId"] = self.model
 
         # Add tools if available
         tools = self.get_available_functions()
         if tools:
+            converted_tools = self._convert_tools_to_provider_format(tools)
             kwargs["toolConfig"] = {
-                "tools": self._convert_tools_to_provider_format(tools)
+                "tools": converted_tools
             }
+            self.logger.info(f"Added {len(tools)} tools to converse_stream request: {[t.get('name') for t in tools]}")
+        else:
+            self.logger.info("No tools available for converse_stream request")
 
         # Ensure the AI remembers the past conversation
         new_messages = kwargs.get("messages", [])
@@ -235,17 +340,43 @@ class BedrockLLM(LLM):
             kwargs["system"] = [{"text": enhanced_instructions}]
 
         try:
-            response = self.client.converse_stream(**kwargs)
+            # Capture system message for use in follow-up calls
+            system_param = kwargs.get("system")
+            
+            # Log initial request details
+            self.logger.info(f"Making converse_stream request with {len(kwargs.get('messages', []))} messages")
+            if kwargs.get("toolConfig"):
+                tool_count = len(kwargs["toolConfig"].get("tools", []))
+                self.logger.info(f"Request includes {tool_count} tools")
+            
+            try:
+                response = self.client.converse_stream(**kwargs)
+                self.logger.info("converse_stream API call succeeded, processing stream...")
+            except ClientError as e:
+                error_code = e.response.get('Error', {}).get('Code', 'Unknown') if hasattr(e, 'response') else 'Unknown'
+                error_msg = e.response.get('Error', {}).get('Message', str(e)) if hasattr(e, 'response') else str(e)
+                self.logger.error(f"AWS Bedrock API error in converse_stream: {error_code} - {error_msg}")
+                self.logger.error(f"Full error details: {e}", exc_info=True)
+                raise
+            
             stream = response.get('stream')
+            if not stream:
+                self.logger.error("converse_stream response has no 'stream' field")
+                llm_response = LLMResponseEvent(None, "No stream in response")
+                return llm_response
             
             text_parts: List[str] = []
             accumulated_calls: List[NormalizedToolCallItem] = []
             last_event = None
             
             # Process stream
+            event_count = 0
             for event in stream:
+                event_count += 1
                 last_event = event
                 self._process_stream_event(event, text_parts, accumulated_calls)
+            
+            self.logger.info(f"Processed {event_count} stream events, accumulated {len(accumulated_calls)} tool calls, {len(''.join(text_parts))} chars of text")
             
             # Handle multi-hop tool calling
             messages = kwargs["messages"][:]
@@ -253,65 +384,137 @@ class BedrockLLM(LLM):
             rounds = 0
             seen: set[tuple[str, str, str]] = set()
             
+            if accumulated_calls:
+                self.logger.info(f"Extracted {len(accumulated_calls)} tool calls from stream")
+                # Build assistant message from accumulated tool calls
+                # This matches the format from AWS response['output']['message']
+                assistant_content = []
+                for tool_call in accumulated_calls:
+                    assistant_content.append({
+                        "toolUse": {
+                            "toolUseId": tool_call["id"],
+                            "name": tool_call["name"],
+                            "input": tool_call["arguments_json"],
+                        }
+                    })
+                assistant_msg_from_stream = {
+                    "role": "assistant",
+                    "content": assistant_content
+                }
+                messages.append(assistant_msg_from_stream)
+                self.logger.debug("Added assistant message from stream to conversation history")
+            
             while accumulated_calls and rounds < MAX_ROUNDS:
                 triples, seen = await self._dedup_and_execute(accumulated_calls, seen=seen, max_concurrency=8, timeout_s=30)  # type: ignore[arg-type]
                 
                 if not triples:
+                    self.logger.warning("No tool execution results despite tool calls")
                     break
                 
+                self.logger.debug(f"Executed {len(triples)} tool calls, processing results")
+                
                 # Build tool result messages
+                # According to AWS Bedrock Converse API, toolResult content should use {"text": "..."} format
                 tool_result_blocks = []
                 for tc, res, err in triples:
-                    payload = self._sanitize_tool_output(res)
+                    if err:
+                        self.logger.error(f"Tool {tc['name']} execution error: {err}")
+                        tool_response = str(err)
+                    else:
+                        # Convert result to string format (AWS expects text, not json content type)
+                        if isinstance(res, (dict, list)):
+                            tool_response = json.dumps(res)
+                        elif isinstance(res, str):
+                            tool_response = res
+                        else:
+                            tool_response = str(res)
+                    
                     tool_result_blocks.append({
                         "toolUseId": tc["id"],
-                        "content": [{"json": payload if isinstance(payload, dict) else {"result": payload}}],
+                        "content": [{"text": tool_response}],
                     })
 
-                assistant_msg = {
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "toolUse": {
-                                "toolUseId": tc["id"],
-                                "name": tc["name"],
-                                "input": tc["arguments_json"],
-                            }
-                        }
-                        for tc, _, _ in triples
-                    ]
-                }
+                # Add user message with tool results only
+                # Assistant message was already added from stream before the loop
                 user_tool_results_msg = {
                     "role": "user",
                     "content": [{"toolResult": tr} for tr in tool_result_blocks]
                 }
-                messages = messages + [assistant_msg, user_tool_results_msg]
+                messages = messages + [user_tool_results_msg]
+                
+                self.logger.debug(f"Sending {len(tool_result_blocks)} tool results back to model")
 
+                # Build follow-up request parameters
+                follow_up_kwargs = {
+                    "modelId": self.model,
+                    "messages": messages,
+                    "toolConfig": kwargs.get("toolConfig", {}),
+                }
+                # Include system message if it was provided
+                if system_param:
+                    follow_up_kwargs["system"] = system_param
+                
                 # Next round with tools
-                follow_up_response = self.client.converse_stream(
-                    modelId=self.model,
-                    messages=messages,
-                    toolConfig=kwargs.get("toolConfig", {}),
-                )
+                follow_up_response = self.client.converse_stream(**follow_up_kwargs)
                 
                 accumulated_calls = []
+                follow_up_text_parts: List[str] = []
                 follow_up_stream = follow_up_response.get('stream')
                 for event in follow_up_stream:
                     last_event = event
-                    self._process_stream_event(event, text_parts, accumulated_calls)
+                    self._process_stream_event(event, follow_up_text_parts, accumulated_calls)
+                
+                # Append follow-up text to main text parts
+                if follow_up_text_parts:
+                    text_parts.extend(follow_up_text_parts)
+                
+                self.logger.debug(f"Follow-up response: {len(accumulated_calls)} tool calls, text length: {len(''.join(follow_up_text_parts))}")
+                
+                # Add assistant message from follow-up stream if there are more tool calls
+                if accumulated_calls:
+                    # Build assistant message from accumulated tool calls from follow-up
+                    follow_up_assistant_content = []
+                    for tool_call in accumulated_calls:
+                        follow_up_assistant_content.append({
+                            "toolUse": {
+                                "toolUseId": tool_call["id"],
+                                "name": tool_call["name"],
+                                "input": tool_call["arguments_json"],
+                            }
+                        })
+                    follow_up_assistant_msg = {
+                        "role": "assistant",
+                        "content": follow_up_assistant_content
+                    }
+                    messages.append(follow_up_assistant_msg)
+                    self.logger.debug("Added assistant message from follow-up stream to conversation history")
+                
+                # If follow-up already has text and no more tool calls, we're done!
+                if follow_up_text_parts and not accumulated_calls:
+                    self.logger.info("Follow-up response contains text with no tool calls, using as final response")
+                    break
                 
                 rounds += 1
             
-            # Final pass without tools
-            if accumulated_calls or rounds > 0:
-                final_response = self.client.converse_stream(
-                    modelId=self.model,
-                    messages=messages,
-                )
+            # Final pass without tools ONLY if we still have pending tool calls
+            if accumulated_calls:
+                self.logger.info("Performing final pass without tools to get text response")
+                final_kwargs = {
+                    "modelId": self.model,
+                    "messages": messages,
+                }
+                # Include system message if it was provided
+                if system_param:
+                    final_kwargs["system"] = system_param
+                
+                final_response = self.client.converse_stream(**final_kwargs)
                 final_stream = final_response.get('stream')
+                final_text_parts: List[str] = []
                 for event in final_stream:
                     last_event = event
-                    self._process_stream_event(event, text_parts, accumulated_calls)
+                    self._process_stream_event(event, final_text_parts, accumulated_calls)
+                if final_text_parts:
+                    text_parts.extend(final_text_parts)
             
             total_text = "".join(text_parts)
             llm_response = LLMResponseEvent(last_event, total_text)
@@ -405,9 +608,21 @@ class BedrockLLM(LLM):
         tool_calls = []
         
         output = response.get('output', {})
+        if not output:
+            self.logger.debug("Response has no 'output' field")
+            return tool_calls
+            
         message = output.get('message', {})
+        if not message:
+            self.logger.debug("Response output has no 'message' field")
+            return tool_calls
+            
         content = message.get('content', [])
+        if not content:
+            self.logger.debug("Response message has no 'content' field")
+            return tool_calls
         
+        self.logger.debug(f"Checking {len(content)} content items for tool calls")
         for item in content:
             if 'toolUse' in item:
                 tool_use = item['toolUse']
@@ -418,6 +633,7 @@ class BedrockLLM(LLM):
                     "arguments_json": tool_use.get('input', {})
                 }
                 tool_calls.append(tool_call)
+                self.logger.debug(f"Found tool call: {tool_call['name']} (id: {tool_call['id']})")
         
         return tool_calls
 
@@ -433,12 +649,38 @@ class BedrockLLM(LLM):
         """
         aws_tools = []
         for tool in tools:
+            name = tool.get("name", "unnamed_tool")
+            description = tool.get("description", "") or ""
+            params = tool.get("parameters_schema") or {}
+            
+            # Normalize to a valid JSON Schema object
+            if not isinstance(params, dict):
+                params = {}
+            
+            # Ensure it has the required JSON Schema structure
+            if "type" not in params:
+                # Extract required fields from properties if they exist
+                properties = params if params else {}
+                required = list(properties.keys()) if properties else []
+                
+                params = {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
+                    "additionalProperties": False
+                }
+            else:
+                # Already has type, but ensure additionalProperties is set
+                if "additionalProperties" not in params:
+                    params["additionalProperties"] = False
+            
+            # AWS Bedrock Converse API expects toolSpec format with inputSchema.json as a DICT
             aws_tool = {
                 "toolSpec": {
-                    "name": tool["name"],
-                    "description": tool.get("description", ""),
+                    "name": name,
+                    "description": description,
                     "inputSchema": {
-                        "json": tool["parameters_schema"]
+                        "json": params  # This is a dict, not a JSON string
                     }
                 }
             }

@@ -20,12 +20,13 @@ async def start_agent() -> None:
         agent_user=User(name="Weather Bot"),
         instructions="You are a helpful weather bot. Use the provided tools to answer questions.",
         llm=aws.LLM(
-            model="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            model="anthropic.claude-3-sonnet-20240229-v1:0",
             region_name="us-east-1"
+
         ),
         tts=cartesia.TTS(),
         stt=deepgram.STT(),
-        turn_detection=smart_turn.TurnDetection(buffer_duration=2.0, confidence_threshold=0.5),
+        # turn_detection=smart_turn.TurnDetection(buffer_duration=2.0, confidence_threshold=0.5),
     )
 
     # Register custom functions

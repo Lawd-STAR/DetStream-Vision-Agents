@@ -159,6 +159,8 @@ class SmartTurnDetection(TurnDetector):
         audio_data = audio_data.resample(16000).to_float32()
         self._audio_buffer = self._audio_buffer.append(audio_data)
 
+        # TODO: ensuring samples are 512 could be done in the base class
+
         if len(self._audio_buffer.samples) < 512:
             # too small to process
             return
@@ -179,7 +181,7 @@ class SmartTurnDetection(TurnDetector):
                 # add to the segment
                 logger.info("adding to segment")
 
-                # TODO: it's pythong, append should work on the object, this is wrong
+                # TODO: it's python, append should work on the object, this is wrong
                 self._active_segment = self._active_segment.append(chunk)
 
                 if is_speech:
@@ -189,6 +191,8 @@ class SmartTurnDetection(TurnDetector):
                         self._silence.speaking_chunks = 0
                 else:
                     self._silence.trailing_silence_chunks += 1
+
+                # TODO: make this testable
 
                 trailing_silence_ms = self._silence.trailing_silence_chunks * 512 / 16000
                 long_silence = trailing_silence_ms > self._trailing_silence_ms
@@ -218,12 +222,13 @@ class SmartTurnDetection(TurnDetector):
                 self._emit_start_turn_event(TurnStartedEvent(participant=participant))
                 # create a new segment
                 self._active_segment = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
-                self._active_segment.append(chunk)
+                self._active_segment = self._active_segment.append(chunk)
                 self._silence = Silence()
             else:
+                logger.info("no active segment")
                 # keep last n audio packets in speech buffer
-                self._pre_speech_buffer.append(audio_data)
-                self._pre_speech_buffer.tail(8)
+                self._pre_speech_buffer=self._pre_speech_buffer.append(audio_data)
+                self._pre_speech_buffer=self._pre_speech_buffer.tail(8)
 
 
     async def _predict_turn_completed(

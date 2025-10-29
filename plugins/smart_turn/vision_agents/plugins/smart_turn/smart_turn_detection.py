@@ -160,24 +160,6 @@ class SmartTurnDetection(TurnDetector):
         Actual processing happens in background task.
         """
 
-        if not hasattr(self, "_bk_audio"):
-            print("================")
-            print("================")
-            print("================")
-            print("STARTED NOW!")
-            print("================")
-            print("================")
-            print("================")
-            self._bk_audio = audio_data
-
-            def dumpwav():
-                with open("/Users/tommaso/out.wav", "wb") as f:
-                    _ = f.write(self._bk_audio.to_wav_bytes())
-
-            atexit.register(dumpwav)
-
-        self._bk_audio = self._bk_audio.append(audio_data)
-
         # Just enqueue the audio packet - fast and non-blocking
         await self._audio_queue.put((audio_data, participant, conversation))
 

@@ -160,6 +160,19 @@ class SmartTurnDetection(TurnDetector):
         - Or do we share historical + length of new segment to 8 seconds. (this seems better)
         """
 
+        print(f"audio_data.duration_ms {audio_data.duration_ms}")
+        if not hasattr(self, 'first_audio_at'):
+            self.first_audio_at = time.time()+ audio_data.duration
+
+        if not hasattr(self, 'received_audio_cum'):
+            self.received_audio_cum = 0
+
+        self.received_audio_cum += audio_data.duration
+
+        print(f"elapsed time: {time.time() - self.first_audio_at}")
+        print(f"received audio: {self.received_audio_cum}")
+
+
         # ensure audio is in the right format
         audio_data = audio_data.resample(16000).to_float32()
         self._audio_buffer = self._audio_buffer.append(audio_data)

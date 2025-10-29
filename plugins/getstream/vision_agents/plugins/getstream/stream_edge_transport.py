@@ -19,7 +19,7 @@ from getstream.video.rtc.pb.stream.video.sfu.models.models_pb2 import (
 )
 from getstream.video.rtc.track_util import PcmData
 from getstream.video.rtc.tracks import SubscriptionConfig, TrackSubscriptionConfig
-
+from vision_agents.core.agents.agents import tracer
 from vision_agents.core.edge import EdgeTransport, sfu_events
 from vision_agents.plugins.getstream.stream_conversation import StreamConversation
 from vision_agents.core.edge.types import Connection, User, OutputAudioTrack
@@ -328,6 +328,7 @@ class StreamEdge(EdgeTransport):
         # Note: Not calling super().close() as it's an abstract method with trivial body
         pass
 
+    @tracer.start_as_current_span("stream_edge.open_demo")
     async def open_demo(self, call: Call) -> str:
         client = call.client.stream
 

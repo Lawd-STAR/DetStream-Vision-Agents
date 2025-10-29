@@ -2,6 +2,7 @@ import uuid
 from typing import Optional, List, TYPE_CHECKING, Any, Dict
 
 from google import genai
+from google.genai.client import AsyncClient
 from google.genai import types
 from google.genai.types import GenerateContentResponse, GenerateContentConfig
 
@@ -37,7 +38,7 @@ class GeminiLLM(LLM):
           from vision_agents.plugins import gemini
           llm = gemini.LLM()
       """
-    def __init__(self, model: str, api_key: Optional[str] = None, client: Optional[genai.Client] = None):
+    def __init__(self, model: str, api_key: Optional[str] = None, client: Optional[AsyncClient] = None):
         """
         Initialize the GeminiLLM class.
 
@@ -54,7 +55,7 @@ class GeminiLLM(LLM):
         if client is not None:
             self.client = client
         else:
-            self.client = genai.Client(api_key=api_key)
+            self.client = AsyncClient(api_key=api_key)
 
     async def simple_response(self, text: str, processors: Optional[List[Processor]] = None, participant: Optional[Any] = None) -> LLMResponseEvent[Any]:
         """
@@ -99,7 +100,7 @@ class GeminiLLM(LLM):
             kwargs["config"] = cfg
 
         # Generate content using the client
-        iterator = self.chat.send_message_stream(*args, **kwargs)
+        iterator = await self.chat.send_message_stream(*args, **kwargs)
         text_parts : List[str] = []
         final_chunk = None
         pending_calls: List[NormalizedToolCallItem] = []

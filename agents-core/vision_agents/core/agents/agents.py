@@ -317,7 +317,9 @@ class Agent:
             if self.conversation is None:
                 return
 
-            user_id = event.user_id() or "user"
+            user_id = event.user_id()
+            if user_id is None:
+                raise ValueError("missing user_id")
 
             with self.span("agent.on_stt_transcript_event_sync_conversation") as span:
                 await self.conversation.upsert_message(

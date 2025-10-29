@@ -228,17 +228,9 @@ class SmartTurnDetection(TurnDetector):
             # predict if this segment has speech
             speech_probability = await self.vad.predict_speech(chunk.samples)
             is_speech = speech_probability > self.speech_probability_threshold
-            logger.info(
-                "Processing chunk %d, is speech: %s %s",
-                len(chunk.samples),
-                speech_probability,
-                is_speech,
-            )
 
             if self._active_segment is not None:
                 # add to the segment
-                logger.info("adding to segment")
-
                 self._active_segment.append(chunk)
 
                 if is_speech:
@@ -258,11 +250,6 @@ class SmartTurnDetection(TurnDetector):
                 max_duration_reached = (
                     self._active_segment.duration_ms
                     >= MAX_SEGMENT_DURATION_SECONDS * 1000
-                )
-                logger.info(
-                    "trailing_silence_ms = %s, self._active_segment.duration_ms %s",
-                    trailing_silence_ms,
-                    self._active_segment.duration_ms,
                 )
 
                 if long_silence or max_duration_reached:
@@ -294,7 +281,6 @@ class SmartTurnDetection(TurnDetector):
                         self._pre_speech_buffer.append(merged)
                         self._pre_speech_buffer = self._pre_speech_buffer.tail(8)
             elif is_speech and self._active_segment is None:
-                logger.info("starting new segment")
                 self._emit_start_turn_event(TurnStartedEvent(participant=participant))
                 # create a new segment
                 self._active_segment = PcmData(
@@ -460,7 +446,6 @@ async def ensure_model(path: str, url: str) -> str:
     """
     if not os.path.exists(path):
         model_name = os.path.basename(path)
-        logger.info(f"Downloading {model_name}...")
 
         try:
             async with httpx.AsyncClient(
@@ -483,7 +468,6 @@ async def ensure_model(path: str, url: str) -> str:
 
                     await asyncio.to_thread(write_file)
 
-            logger.info(f"{model_name} downloaded.")
         except httpx.HTTPError as e:
             # Clean up partial download on error
             if os.path.exists(path):

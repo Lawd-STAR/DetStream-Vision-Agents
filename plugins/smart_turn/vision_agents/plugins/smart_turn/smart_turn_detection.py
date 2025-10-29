@@ -1,7 +1,6 @@
 import asyncio
 import os
 import time
-from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
@@ -9,11 +8,10 @@ import httpx
 from getstream.video.rtc.track_util import PcmData, AudioFormat
 import numpy as np
 import onnxruntime as ort
-from hatch.cli import self
 from transformers import WhisperFeatureExtractor
 
 from vision_agents.core.agents import Conversation
-from vision_agents.core.agents.agents import default_agent_options
+from vision_agents.core.agents.agents import default_agent_options, AgentOptions
 from vision_agents.core.edge.types import Participant
 
 from vision_agents.core.turn_detection import (
@@ -38,12 +36,16 @@ SILERO_ONNX_URL = "https://github.com/snakers4/silero-vad/raw/master/src/silero_
 # Audio processing constants
 CHUNK = 512  # Samples per chunk for VAD processing
 RATE = 16000  # Sample rate in Hz (16kHz)
-MAX_SEGMENT_DURATION_SECONDS = 8 # Maximum duration in seconds for a single audio segment
+MAX_SEGMENT_DURATION_SECONDS = (
+    8  # Maximum duration in seconds for a single audio segment
+)
+
 
 @dataclass
 class Silence:
     trailing_silence_chunks: int = 0
     speaking_chunks: int = 0
+
 
 class SmartTurnDetection(TurnDetector):
     """
@@ -71,6 +73,7 @@ class SmartTurnDetection(TurnDetector):
         speech_probability_threshold: float = 0.5,
         pre_speech_buffer_ms: int = 200,
         silence_duration_ms: int = 3000,
+        options: AgentOptions = None,
     ):
         """
         Initialize Smart Turn Detection.
@@ -84,7 +87,9 @@ class SmartTurnDetection(TurnDetector):
         super().__init__()
 
         # Configuration parameters
-        self._audio_buffer = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
+        self._audio_buffer = PcmData(
+            sample_rate=RATE, channels=1, format=AudioFormat.F32
+        )
         self._silence = Silence()
         self.vad_reset_interval_seconds = vad_reset_interval_seconds
         self.speech_probability_threshold = speech_probability_threshold
@@ -100,8 +105,10 @@ class SmartTurnDetection(TurnDetector):
         self._trailing_silence_ms = 2000
         self._tail_silence_ms = 0.0
 
-        # TODO: move this to the right place
-        self.options = default_agent_options()
+        if options is None:
+            self.options = default_agent_options()
+        else:
+            self.options = options
 
     async def start(self):
         # Ensure model directory exists
@@ -164,8 +171,10 @@ class SmartTurnDetection(TurnDetector):
             return
 
         audio_chunks = list(self._audio_buffer.chunks(512))
-        self._audio_buffer = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
-        self._audio_buffer.append(audio_chunks[-1]) # add back the last one
+        self._audio_buffer = PcmData(
+            sample_rate=RATE, channels=1, format=AudioFormat.F32
+        )
+        self._audio_buffer.append(audio_chunks[-1])  # add back the last one
         # this ensures we handle the situation when audio data can't be divided by 512. ie 900
 
         # detect speech in small 512 chunks, gather to larger audio segments with speech
@@ -173,7 +182,12 @@ class SmartTurnDetection(TurnDetector):
             # predict if this segment has speech
             speech_probability = await self.vad.predict_speech(chunk.samples)
             is_speech = speech_probability > self.speech_probability_threshold
-            logger.info("Processing chunk %d, is speech: %s %s", len(chunk.samples), speech_probability, is_speech)
+            logger.info(
+                "Processing chunk %d, is speech: %s %s",
+                len(chunk.samples),
+                speech_probability,
+                is_speech,
+            )
 
             if self._active_segment is not None:
                 # add to the segment
@@ -192,48 +206,64 @@ class SmartTurnDetection(TurnDetector):
 
                 # TODO: make this testable
 
-                trailing_silence_ms = self._silence.trailing_silence_chunks * 512 / 16000 * 1000
+                trailing_silence_ms = (
+                    self._silence.trailing_silence_chunks * 512 / 16000 * 1000
+                )
                 long_silence = trailing_silence_ms > self._trailing_silence_ms
-                max_duration_reached = self._active_segment.duration_ms >= MAX_SEGMENT_DURATION_SECONDS * 1000
-                logger.info("trailing_silence_ms = %s, self._active_segment.duration_ms %s", trailing_silence_ms, self._active_segment.duration_ms)
+                max_duration_reached = (
+                    self._active_segment.duration_ms
+                    >= MAX_SEGMENT_DURATION_SECONDS * 1000
+                )
+                logger.info(
+                    "trailing_silence_ms = %s, self._active_segment.duration_ms %s",
+                    trailing_silence_ms,
+                    self._active_segment.duration_ms,
+                )
 
                 if long_silence or max_duration_reached:
                     # expand to 8 seconds with either silence or historical
-                    merged = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
+                    merged = PcmData(
+                        sample_rate=RATE, channels=1, format=AudioFormat.F32
+                    )
                     merged = merged.append(self._pre_speech_buffer)
                     merged = merged.append(self._active_segment)
                     merged = merged.tail(8, True, "start")
                     # see if we've completed the turn
-                    prediction = await self._predict_turn_completed(
-                        merged, participant
-                    )
+                    prediction = await self._predict_turn_completed(merged, participant)
                     turn_ended = prediction > 0.5
                     if turn_ended:
-                        self._emit_end_turn_event(TurnEndedEvent(participant=participant))
+                        self._emit_end_turn_event(
+                            TurnEndedEvent(participant=participant)
+                        )
                         self._active_segment = None
                         self._silence = Silence()
                         # add the active segment to the speech buffer, so the next iteration can reuse it if needed
-                        self._pre_speech_buffer = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
+                        self._pre_speech_buffer = PcmData(
+                            sample_rate=RATE, channels=1, format=AudioFormat.F32
+                        )
                         self._pre_speech_buffer = self._pre_speech_buffer.append(merged)
                         self._pre_speech_buffer = self._pre_speech_buffer.tail(8)
             elif is_speech and self._active_segment is None:
                 logger.info("starting new segment")
                 self._emit_start_turn_event(TurnStartedEvent(participant=participant))
                 # create a new segment
-                self._active_segment = PcmData(sample_rate=RATE, channels=1, format=AudioFormat.F32)
+                self._active_segment = PcmData(
+                    sample_rate=RATE, channels=1, format=AudioFormat.F32
+                )
                 self._active_segment = self._active_segment.append(chunk)
                 self._silence = Silence()
             else:
                 logger.info("no active segment")
                 # keep last n audio packets in speech buffer
-                self._pre_speech_buffer=self._pre_speech_buffer.append(chunk)
-                self._pre_speech_buffer=self._pre_speech_buffer.tail(8)
-
+                self._pre_speech_buffer = self._pre_speech_buffer.append(chunk)
+                self._pre_speech_buffer = self._pre_speech_buffer.tail(8)
 
     async def _predict_turn_completed(
         self, pcm: PcmData, participant: Participant
     ) -> float:
-        return await asyncio.to_thread(self._blocking_predict_turn_completed, pcm, participant)
+        return await asyncio.to_thread(
+            self._blocking_predict_turn_completed, pcm, participant
+        )
 
     def _blocking_predict_turn_completed(
         self, pcm: PcmData, participant: Participant
@@ -323,7 +353,10 @@ class SileroVAD:
         x = np.reshape(chunk_f32, (1, -1))
         if x.shape[1] != CHUNK:
             # Raise on incorrect usage
-            raise ValueError("incorrect usage for predict speech. only send audio data in chunks of 512. got %d", x.shape[1])
+            raise ValueError(
+                "incorrect usage for predict speech. only send audio data in chunks of 512. got %d",
+                x.shape[1],
+            )
         x = np.concatenate((self._context, x), axis=1)
 
         # Run ONNX

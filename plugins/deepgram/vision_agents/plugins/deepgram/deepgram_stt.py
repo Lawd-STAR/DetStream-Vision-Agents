@@ -74,7 +74,6 @@ class STT(stt.STT):
         self.connection: Optional[Any] = None
         self._connection_ready = asyncio.Event()
         self._connection_context: Optional[Any] = None
-        self._listening_task: Optional[asyncio.Task[Any]] = None
         self._keepalive_task: Optional[asyncio.Task[Any]] = None
 
     async def process_audio(
@@ -160,11 +159,6 @@ class STT(stt.STT):
                 self.connection.on("message", self._on_message)
                 self.connection.on("error", self._on_error)
                 self.connection.on("close", self._on_close)
-
-                # Start listening - track the task so we can detect if it fails
-                self._listening_task = asyncio.create_task(
-                    self._start_listening_with_error_handling()
-                )
                 
                 # Start keepalive if enabled
                 if self.keepalive:
@@ -221,17 +215,6 @@ class STT(stt.STT):
         # Cancel keepalive task if running
         if self._keepalive_task and not self._keepalive_task.done():
             self._keepalive_task.cancel()
-    
-    async def _start_listening_with_error_handling(self):
-        """
-        Wrapper around start_listening that handles errors and logs them.
-        """
-        try:
-            if self.connection:
-                await self.connection.start_listening()
-        except Exception as e:
-            logger.error(f"Deepgram listening loop failed: {e}", exc_info=True)
-            self._connection_ready.clear()
     
     async def _keepalive_loop(self):
         """
@@ -334,14 +317,6 @@ class STT(stt.STT):
             self._keepalive_task.cancel()
             try:
                 await self._keepalive_task
-            except asyncio.CancelledError:
-                pass
-        
-        # Cancel listening task
-        if self._listening_task and not self._listening_task.done():
-            self._listening_task.cancel()
-            try:
-                await self._listening_task
             except asyncio.CancelledError:
                 pass
 

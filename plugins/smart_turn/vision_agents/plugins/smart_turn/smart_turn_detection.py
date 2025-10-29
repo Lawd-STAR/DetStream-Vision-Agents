@@ -38,6 +38,7 @@ SILERO_ONNX_URL = "https://github.com/snakers4/silero-vad/raw/master/src/silero_
 # Audio processing constants
 CHUNK = 512  # Samples per chunk for VAD processing
 RATE = 16000  # Sample rate in Hz (16kHz)
+MAX_SEGMENT_DURATION_SECONDS = 8 # Maximum duration in seconds for a single audio segment
 
 @dataclass
 class Silence:
@@ -70,7 +71,6 @@ class SmartTurnDetection(TurnDetector):
         speech_probability_threshold: float = 0.5,
         pre_speech_buffer_ms: int = 200,
         silence_duration_ms: int = 3000,
-        max_segment_duration_seconds: int = 8,  # TODO: this should not be configurable
     ):
         """
         Initialize Smart Turn Detection.
@@ -80,7 +80,6 @@ class SmartTurnDetection(TurnDetector):
             speech_probability_threshold: Minimum probability to consider audio as speech (0.0-1.0)
             pre_speech_buffer_ms: Duration in ms to buffer before speech detection trigger
             silence_duration_ms: Duration of trailing silence in ms before ending a turn
-            max_segment_duration_seconds: Maximum duration in seconds for a single audio segment
         """
         super().__init__()
 
@@ -91,7 +90,6 @@ class SmartTurnDetection(TurnDetector):
         self.speech_probability_threshold = speech_probability_threshold
         self.pre_speech_buffer_ms = pre_speech_buffer_ms
         self.silence_duration_ms = silence_duration_ms
-        self.max_segment_duration_seconds = max_segment_duration_seconds
 
         # TODO: this is not the most efficient data structure for a deque behaviour
         self._pre_speech_buffer = PcmData(
@@ -196,7 +194,7 @@ class SmartTurnDetection(TurnDetector):
 
                 trailing_silence_ms = self._silence.trailing_silence_chunks * 512 / 16000 * 1000
                 long_silence = trailing_silence_ms > self._trailing_silence_ms
-                max_duration_reached = self._active_segment.duration_ms >= self.max_segment_duration_seconds * 1000
+                max_duration_reached = self._active_segment.duration_ms >= MAX_SEGMENT_DURATION_SECONDS * 1000
                 logger.info("trailing_silence_ms = %s, self._active_segment.duration_ms %s", trailing_silence_ms, self._active_segment.duration_ms)
 
                 if long_silence or max_duration_reached:

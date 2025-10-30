@@ -28,11 +28,6 @@ class STT(stt.STT):
 
     - eot_threshold controls turn end sensitivity
     - eager_eot_threshold controls eager turn ending (so you can already prepare the LLM response)
-
-    TODO:
-    - verify connect settings
-    - process audio. does it need to run async?
-    - check how bad settings are handled
     """
 
     def __init__(
@@ -99,7 +94,6 @@ class STT(stt.STT):
             return
 
         # Wait for connection to be ready
-        logger.info("Waiting for connection to be ready...")
         await self._connection_ready.wait()
 
         # Double-check connection is still ready (could have closed while waiting)
@@ -116,20 +110,15 @@ class STT(stt.STT):
         self._current_participant = participant
 
         if self.connection is not None:
-            logger.info(f"Sending {len(audio_bytes)} bytes of audio to Deepgram")
             await self.connection.send_media(audio_bytes)
-            logger.info("Audio sent successfully")
 
     async def start(self):
         """
         Start the Deepgram WebSocket connection and begin listening for transcripts.
         """
-        logger.info("Starting Deepgram connection...")
-
         if self.connection is not None:
             logger.warning("Deepgram connection already started")
             return
-
 
         # Build connection parameters
         connect_params = {
@@ -144,8 +133,6 @@ class STT(stt.STT):
         if self.eager_eot_threshold is not None:
             connect_params["eager_eot_threshold"] = str(self.eager_eot_threshold)
         
-        logger.info(f"Connecting to Deepgram with params: {connect_params}")
-        
         # Connect to Deepgram v2 listen WebSocket with timeout
         self._connection_context = self.client.listen.v2.connect(**connect_params)
         
@@ -155,8 +142,6 @@ class STT(stt.STT):
             timeout=10.0
         )
 
-        logger.info("Deepgram connection established, registering event handlers...")
-        
         # Register event handlers
         if self.connection is not None:
             self.connection.on("open", self._on_open)
@@ -165,12 +150,10 @@ class STT(stt.STT):
             self.connection.on("close", self._on_close)
             
             # Start listening for events
-            logger.info("Starting listening task...")
             self._listen_task = asyncio.create_task(self.connection.start_listening())
 
         # Mark connection as ready
         self._connection_ready.set()
-        logger.info("Deepgram connection ready")
 
     def _on_message(self, message):
         """
@@ -179,11 +162,9 @@ class STT(stt.STT):
         Args:
             message: The message object from Deepgram
         """
-        logger.info(f"Received message: {message}")
-        
         # Extract message data
         if not hasattr(message, "type"):
-            logger.info(f"Received message without 'type' attribute: {message}")
+            logger.warning(f"Received message without 'type' attribute: {message}")
             return
 
         # Handle TurnInfo messages (v2 API)
@@ -192,6 +173,7 @@ class STT(stt.STT):
             transcript_text = getattr(message, "transcript", "").strip()
             
             if not transcript_text:
+                logger.warning(f"Received TurnInfo message with empty transcript: {message}")
                 return
 
             # Get event type to determine if final or partial
@@ -245,12 +227,9 @@ class STT(stt.STT):
                 self._emit_partial_transcript_event(
                     transcript_text, participant, response_metadata
                 )
-        else:
-            # Log unhandled message types
-            logger.info(f"Received unhandled message type '{message.type}': {message}")
 
     def _on_open(self, message):
-        logger.info("Deepgram WebSocket connection established %s", message)
+        pass
 
     def _on_error(self, error):
         """

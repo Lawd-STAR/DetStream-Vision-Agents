@@ -24,6 +24,7 @@ class STT(abc.ABC):
     process_audio is currently called every 20ms. The integration with turn keeping could be improved
     """
     closed: bool = False
+    started: bool = False
 
     def __init__(
         self,
@@ -34,6 +35,7 @@ class STT(abc.ABC):
 
         self.events = EventManager()
         self.events.register_events_from_module(events, ignore_not_compatible=True)
+
 
     def _emit_transcript_event(
         self,
@@ -106,7 +108,9 @@ class STT(abc.ABC):
         pass
 
     async def start(self):
-        pass
+        if self.started:
+            raise ValueError("STT is already started, dont call this method twice")
+        self.started = True
 
     async def close(self):
         self.closed = True

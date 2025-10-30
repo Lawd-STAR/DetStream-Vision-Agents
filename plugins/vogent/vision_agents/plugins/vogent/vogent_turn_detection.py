@@ -1,12 +1,13 @@
 import asyncio
 import os
 import time
+from dataclasses import dataclass
 from typing import Optional, Any
 
 import httpx
 import numpy as np
 from faster_whisper import WhisperModel
-from getstream.video.rtc.track_util import PcmData
+from getstream.video.rtc.track_util import PcmData, AudioFormat
 from vogent_turn import TurnDetector as VogentDetector
 
 from vision_agents.core.agents import Conversation
@@ -28,6 +29,12 @@ SILERO_ONNX_URL = "https://github.com/snakers4/silero-vad/raw/master/src/silero_
 # Audio processing constants
 CHUNK = 512  # Samples per chunk for VAD processing
 RATE = 16000  # Sample rate in Hz (16kHz)
+
+
+@dataclass
+class Silence:
+    trailing_silence_chunks: int = 0
+    speaking_chunks: int = 0
 
 
 class VogentTurnDetection(TurnDetector):
@@ -82,20 +89,21 @@ class VogentTurnDetection(TurnDetector):
         self.vogent_threshold = vogent_threshold
         self.model_dir = model_dir
         
-        # Use AudioSegmentCollector for automatic pre/post buffering and segment assembly
-        # TODO: remove colector
-        # self.collector = AudioSegmentCollector(
-        #     pre_speech_ms=self.pre_speech_buffer_ms,
-        #     post_speech_ms=self.silence_duration_ms,
-        #     max_duration_s=self.max_segment_duration_seconds,
-        #     sample_rate=RATE,
-        #     format=AudioFormat.F32,
-        # )
+        # Audio buffering for processing
+        self._audio_buffer = PcmData(
+            sample_rate=RATE, channels=1, format=AudioFormat.F32
+        )
+        self._silence = Silence()
+        self._pre_speech_buffer = PcmData(
+            sample_rate=RATE, channels=1, format=AudioFormat.F32
+        )
+        self._active_segment: Optional[PcmData] = None
+        self._trailing_silence_ms = self.silence_duration_ms
         
-        # Track turn state
-        self.turn_in_progress = False
-        self.current_transcription = ""
-        self.previous_transcription = ""
+        # Producer-consumer pattern: audio packets go into buffer, background task processes them
+        self._audio_queue: asyncio.Queue[Any] = asyncio.Queue()
+        self._processing_task: Optional[asyncio.Task[Any]] = None
+        self._shutdown_event = asyncio.Event()
         
         # Model instances (initialized in start())
         self.vad = None
@@ -113,6 +121,12 @@ class VogentTurnDetection(TurnDetector):
             self._prepare_whisper(),
             self._prepare_vogent(),
         )
+        
+        # Start background processing task
+        self._processing_task = asyncio.create_task(self._process_audio_loop())
+        
+        # Call parent start method
+        await super().start()
 
     async def _prepare_silero_vad(self) -> None:
         """Load Silero VAD model for speech detection."""
@@ -155,7 +169,49 @@ class VogentTurnDetection(TurnDetector):
         conversation: Optional[Conversation],
     ) -> None:
         """
-        Process audio and detect turn completion using multimodal approach.
+        Fast, non-blocking audio packet enqueueing.
+        Actual processing happens in background task.
+        """
+        # Just enqueue the audio packet - fast and non-blocking
+        await self._audio_queue.put((audio_data, participant, conversation))
+
+    async def _process_audio_loop(self):
+        """
+        Background task that continuously processes audio from the queue.
+        This is where the actual VAD and turn detection logic runs.
+        """
+        while not self._shutdown_event.is_set():
+            try:
+                # Wait for audio packet with timeout to allow shutdown
+                audio_data, participant, conversation = await asyncio.wait_for(
+                    self._audio_queue.get(), timeout=1.0
+                )
+
+                # Process the audio packet
+                await self._process_audio_packet(audio_data, participant, conversation)
+
+            except asyncio.TimeoutError:
+                # Timeout is expected - continue loop to check shutdown
+                continue
+            except Exception as e:
+                logger.error(f"Error processing audio: {e}")
+
+    async def _process_audio_packet(
+        self,
+        audio_data: PcmData,
+        participant: Participant,
+        conversation: Optional[Conversation],
+    ) -> None:
+        """
+        Process audio packet through VAD -> Whisper -> Vogent pipeline.
+        
+        This method:
+        1. Buffers audio and processes in 512-sample chunks
+        2. Uses VAD to detect speech
+        3. Creates segments while people are speaking
+        4. When reaching silence or max duration:
+           - Transcribes segment with Whisper
+           - Checks turn completion with Vogent (audio + text)
         
         Args:
             audio_data: PcmData object containing audio samples
@@ -163,86 +219,125 @@ class VogentTurnDetection(TurnDetector):
             conversation: Conversation history for context
         """
         # Ensure audio is in the right format: 16kHz, float32
-        pcm = audio_data.resample(RATE).to_float32()
+        audio_data = audio_data.resample(RATE).to_float32()
+        self._audio_buffer = self._audio_buffer.append(audio_data)
 
-        # Track segments for final turn-end processing
-        segments_to_process: list[Any] = []
+        if len(self._audio_buffer.samples) < CHUNK:
+            # Too small to process
+            return
 
-        # Process audio in 512-sample chunks for VAD
-        for chunk in pcm.chunks(chunk_size=CHUNK):
-            # Run VAD on the chunk
+        # Split into 512-sample chunks
+        audio_chunks = list(self._audio_buffer.chunks(CHUNK))
+        self._audio_buffer = PcmData(
+            sample_rate=RATE, channels=1, format=AudioFormat.F32
+        )
+        self._audio_buffer.append(audio_chunks[-1])  # Add back the last one
+        # This ensures we handle the situation when audio data can't be divided by 512
+
+        # Detect speech in small 512 chunks, gather to larger audio segments with speech
+        for chunk in audio_chunks[:-1]:
+            # Predict if this segment has speech
             if self.vad is None:
                 continue
-            is_speech = self.vad.predict_speech(chunk.samples) > self.speech_probability_threshold
-
-            # Emit turn start on first speech detection
-            if is_speech and not self.turn_in_progress:
-                self._emit_start_turn_event(TurnStartedEvent(participant=participant))
-                self.turn_in_progress = True
-                self.current_transcription = ""
-
-            # Feed chunk to collector, which handles pre/post buffering
-            # segment = self.collector.add_chunk(chunk, is_speech=is_speech)
-
-            # Collect segments for processing
-            # if segment is not None:
-            #     segments_to_process.append(segment)
-
-        # Process all collected segments
-        for segment in segments_to_process:
-            # Transcribe the segment
-            transcription = await self._transcribe_segment(segment)
-            self.current_transcription = transcription
-            
-            # Only check turn completion if we have transcription
-            if self.current_transcription.strip():
-                # Get previous line from conversation
-                # TODO: don't rely on the conversation class
-                prev_line = self._get_previous_line(conversation)
                 
-                # Check if turn is complete using vogent
-                is_complete = await self._predict_turn_completed(
-                    segment, 
-                    prev_line=prev_line,
-                    curr_line=self.current_transcription,
+            speech_probability = self.vad.predict_speech(chunk.samples)
+            is_speech = speech_probability > self.speech_probability_threshold
+
+            if self._active_segment is not None:
+                # Add to the segment
+                self._active_segment.append(chunk)
+
+                if is_speech:
+                    self._silence.speaking_chunks += 1
+                    if self._silence.speaking_chunks > 3:
+                        self._silence.trailing_silence_chunks = 0
+                        self._silence.speaking_chunks = 0
+                else:
+                    self._silence.trailing_silence_chunks += 1
+
+                trailing_silence_ms = (
+                    self._silence.trailing_silence_chunks * CHUNK / RATE * 1000 * 5  # DTX correction
                 )
-                
-                logger.debug(
-                    f"Vogent prediction: is_complete={is_complete}, "
-                    f"prev='{prev_line}', curr='{self.current_transcription}'"
+                long_silence = trailing_silence_ms > self._trailing_silence_ms
+                max_duration_reached = (
+                    self._active_segment.duration_ms
+                    >= self.max_segment_duration_seconds * 1000
                 )
 
-        # End turn if we're in a turn and collector is done (silence detected)
-        if self.turn_in_progress and False:  # TODO: restore collector logic
-            # Final check with vogent before ending turn
-            if self.current_transcription and self.current_transcription.strip():
-                prev_line = self._get_previous_line(conversation)
-                # Get last segment for final prediction
-                last_segment = segments_to_process[-1] if segments_to_process else None
-                
-                if last_segment is not None:
+                if long_silence or max_duration_reached:
+                    # Expand to 8 seconds with either silence or historical
+                    merged = PcmData(
+                        sample_rate=RATE, channels=1, format=AudioFormat.F32
+                    )
+                    merged.append(self._pre_speech_buffer)
+                    merged.append(self._active_segment)
+                    merged = merged.tail(8, True, "start")
+                    
+                    # Transcribe the segment with Whisper
+                    transcription = await self._transcribe_segment(merged)
+                    
+                    # Get previous line from conversation for context
+                    prev_line = self._get_previous_line(conversation)
+                    
+                    # Check if turn is complete using Vogent (multimodal: audio + text)
                     is_complete = await self._predict_turn_completed(
-                        last_segment,
+                        merged,
                         prev_line=prev_line,
-                        curr_line=self.current_transcription,
+                        curr_line=transcription,
                     )
                     
                     if is_complete:
-                        self._emit_end_turn_event(TurnEndedEvent(participant=participant))
-                        self.turn_in_progress = False
-                        # Save current as previous for next turn
-                        self.previous_transcription = self.current_transcription
-                        self.current_transcription = ""
-                else:
-                    # No segment to check, end turn anyway due to silence
-                    self._emit_end_turn_event(TurnEndedEvent(participant=participant))
-                    self.turn_in_progress = False
-                    self.previous_transcription = self.current_transcription
-                    self.current_transcription = ""
+                        self._emit_end_turn_event(
+                            TurnEndedEvent(
+                                participant=participant,
+                                confidence=1.0,  # Vogent gives probability, we already thresholded
+                                trailing_silence_ms=trailing_silence_ms,
+                                duration_ms=self._active_segment.duration_ms,
+                            )
+                        )
+                        self._active_segment = None
+                        self._silence = Silence()
+                        # Add the merged segment to the speech buffer for next iteration
+                        self._pre_speech_buffer = PcmData(
+                            sample_rate=RATE, channels=1, format=AudioFormat.F32
+                        )
+                        self._pre_speech_buffer.append(merged)
+                        self._pre_speech_buffer = self._pre_speech_buffer.tail(8)
+                        
+            elif is_speech and self._active_segment is None:
+                self._emit_start_turn_event(TurnStartedEvent(participant=participant))
+                # Create a new segment
+                self._active_segment = PcmData(
+                    sample_rate=RATE, channels=1, format=AudioFormat.F32
+                )
+                self._active_segment.append(chunk)
+                self._silence = Silence()
             else:
-                # No transcription, just end the turn
-                self._emit_end_turn_event(TurnEndedEvent(participant=participant))
-                self.turn_in_progress = False
+                # Keep last n audio packets in speech buffer
+                self._pre_speech_buffer.append(chunk)
+                self._pre_speech_buffer = self._pre_speech_buffer.tail(8)
+
+    async def wait_for_processing_complete(self, timeout: float = 5.0) -> None:
+        """Wait for all queued audio to be processed. Useful for testing."""
+        start_time = time.time()
+        while self._audio_queue.qsize() > 0 and (time.time() - start_time) < timeout:
+            await asyncio.sleep(0.01)
+
+        # Give a small buffer for the processing to complete
+        await asyncio.sleep(0.1)
+
+    async def stop(self):
+        """Stop turn detection and cleanup background task."""
+        await super().stop()
+
+        if self._processing_task:
+            self._shutdown_event.set()
+            self._processing_task.cancel()
+            try:
+                await self._processing_task
+            except asyncio.CancelledError:
+                pass
+            self._processing_task = None
 
     async def _transcribe_segment(self, pcm: PcmData) -> str:
         """
@@ -367,10 +462,7 @@ class SileroVAD:
         
         opts = ort.SessionOptions()
         opts.inter_op_num_threads = 1
-        opts.intra_op_num_threads = 1
-        self.session = ort.InferenceSession(
-            model_path, providers=["CPUExecutionProvider"], sess_options=opts
-        )
+        self.session = ort.InferenceSession(model_path, sess_options=opts)
         self.context_size = 64  # Silero uses 64-sample context at 16 kHz
         self.reset_interval_seconds = reset_interval_seconds
         self._state: np.ndarray = np.zeros((2, 1, 128), dtype=np.float32)  # (2, B, 128)
@@ -394,8 +486,10 @@ class SileroVAD:
         # Ensure shape (1, 512) and concat context
         x = np.reshape(chunk_f32, (1, -1))
         if x.shape[1] != CHUNK:
-            # Return 0.0 for incomplete chunks instead of raising
-            return 0.0
+            # Raise on incorrect usage
+            raise ValueError(
+                f"incorrect usage for predict speech. only send audio data in chunks of 512. got {x.shape[1]}"
+            )
         x = np.concatenate((self._context, x), axis=1)
 
         # Run ONNX
@@ -404,7 +498,8 @@ class SileroVAD:
             "state": self._state,
             "sr": np.array(16000, dtype=np.int64),
         }
-        out, self._state = self.session.run(None, ort_inputs)
+        outputs = self.session.run(None, ort_inputs)
+        out, self._state = outputs
 
         # Update context (keep last 64 samples)
         self._context = x[:, -self.context_size :]

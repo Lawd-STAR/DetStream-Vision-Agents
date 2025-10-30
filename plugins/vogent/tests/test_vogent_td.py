@@ -24,7 +24,7 @@ class TestVogentTurn:
         finally:
             await td.stop()
 
-    async def test_turn_detection(self, td, mia_audio_16khz):
+    async def test_turn_detection(self, td, mia_audio_16khz, silence_2s_48khz):
         participant = Participant(user_id="mia", original={})
         conversation = InMemoryConversation(instructions="be nice", messages=[])
         event_order = []
@@ -41,6 +41,8 @@ class TestVogentTurn:
             event_order.append("stop")
 
         await td.process_audio(mia_audio_16khz, participant, conversation)
+        await td.process_audio(silence_2s_48khz, participant, conversation)
+
         await asyncio.sleep(0.001)
 
         await asyncio.sleep(5)

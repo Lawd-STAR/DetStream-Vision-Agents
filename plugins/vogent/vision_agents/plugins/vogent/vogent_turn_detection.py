@@ -386,7 +386,7 @@ class SileroVAD:
         if (time.time() - self._last_reset_time) >= self.reset_interval_seconds:
             self._init_states()
 
-    def prob(self, chunk_f32: np.ndarray) -> float:
+    def predict_speech(self, chunk_f32: np.ndarray) -> float:
         """
         Compute speech probability for one chunk of length 512 (float32, mono).
         Returns a scalar float.
